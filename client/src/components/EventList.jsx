@@ -67,12 +67,7 @@ export default function EventList({ bandId, me, onOpen, onNew, onError }) {
                   </span>
                   {e.venue && <span className="muted">{e.venue}</span>}
                 </div>
-                <div className="counts">
-                  <span className="count yes" title="Yes">{e.yes_count}</span>
-                  <span className="count iffy" title="Iffy">{e.iffy_count}</span>
-                  <span className="count no" title="No">{e.no_count}</span>
-                  <span className="count pending" title="No response">{e.no_response_count}</span>
-                </div>
+                <QuorumStatus quorum={e.quorum} />
               </button>
                 {e.attendees.length === 0 ? (
                   <div className="attendees muted">No members yet</div>
@@ -135,6 +130,31 @@ const RSVP_OPTIONS = [
   { value: 'iffy', label: 'Iffy' },
   { value: 'no', label: 'No' },
 ];
+
+// Replaces the RSVP counts: either "Quorum" or how many more players (and which) are needed.
+function QuorumStatus({ quorum }) {
+  if (quorum.met) {
+    return (
+      <div className="quorum met" title="Quorum reached: every required instrument has enough Yes RSVPs">
+        <span className="quorum-badge">✓ Quorum</span>
+      </div>
+    );
+  }
+  const detail = quorum.needed.map((n) => `${n.count} ${n.label}`).join(', ');
+  return (
+    <div className="quorum short" title={`No quorum yet. Still needed: ${detail}`}>
+      <span className="quorum-badge">{quorum.total_needed} more needed</span>
+      <span className="quorum-detail">
+        {quorum.needed.map((n, i) => (
+          <span key={n.instrument}>
+            {i > 0 && ', '}
+            <span className="nowrap">{n.count} {n.label}</span>
+          </span>
+        ))}
+      </span>
+    </div>
+  );
+}
 
 // Attendees arrive sorted by instrument, so consecutive runs form the sections.
 function groupByInstrument(attendees) {

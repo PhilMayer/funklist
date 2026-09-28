@@ -9,6 +9,7 @@ const db = require('./db');
 const { newInviteCode } = require('./db');
 const { HttpError, clean } = require('./errors');
 const auth = require('./auth');
+const { quorumFor } = require('./quorum');
 
 const app = express();
 // Behind a hosting proxy (e.g. Fly.io), trust its X-Forwarded-For so req.ip is the real client
@@ -278,6 +279,7 @@ app.get('/api/bands/:bandId/events', (req, res) => {
     no_count: r.no_count || 0,
     no_response_count: (byEvent.get(r.id) || []).filter((m) => !m.status).length,
     attendees: byEvent.get(r.id) || [],
+    quorum: quorumFor(byEvent.get(r.id) || []),
   })));
 });
 
