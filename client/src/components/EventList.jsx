@@ -39,6 +39,15 @@ export default function EventList({ bandId, me, onOpen, onNew, onError }) {
         <button className="primary" onClick={onNew}>+ New event</button>
       </div>
 
+      {events?.length > 0 && (
+        <div className="legend" aria-hidden="true">
+          <span className="yes">Yes</span>
+          <span className="iffy">Iffy ?</span>
+          <span className="pending">No response</span>
+          <span className="no">Not going</span>
+        </div>
+      )}
+
       {events === null ? (
         <p className="muted">Loading…</p>
       ) : events.length === 0 ? (
@@ -62,10 +71,11 @@ export default function EventList({ bandId, me, onOpen, onNew, onError }) {
                   <span className="count yes" title="Yes">{e.yes_count}</span>
                   <span className="count iffy" title="Iffy">{e.iffy_count}</span>
                   <span className="count no" title="No">{e.no_count}</span>
+                  <span className="count pending" title="No response">{e.no_response_count}</span>
                 </div>
               </button>
                 {e.attendees.length === 0 ? (
-                  <div className="attendees muted">No one confirmed yet</div>
+                  <div className="attendees muted">No members yet</div>
                 ) : (
                   <div className="sections">
                     {groupByInstrument(e.attendees).map((g) => (
@@ -75,11 +85,14 @@ export default function EventList({ bandId, me, onOpen, onNew, onError }) {
                           {g.members.map((m) => (
                             <li
                               key={m.id}
-                              className={`${m.status} ${me?.id === m.id ? 'me' : ''}`}
-                              title={m.status === 'iffy' ? `${m.name} (iffy)` : m.name}
+                              className={`${m.status || 'pending'} ${me?.id === m.id ? 'me' : ''}`}
+                              title={`${m.name}: ${STATUS_LABELS[m.status || 'pending']}`}
                             >
                               {m.name}
-                              {m.status === 'iffy' && <span className="iffy-mark"> ?</span>}
+                              {m.status === 'iffy' && <span className="iffy-mark" aria-hidden="true"> ?</span>}
+                              {m.status !== 'yes' && (
+                                <span className="sr-only"> ({STATUS_LABELS[m.status || 'pending']})</span>
+                              )}
                             </li>
                           ))}
                         </ul>
@@ -114,6 +127,8 @@ export default function EventList({ bandId, me, onOpen, onNew, onError }) {
     </section>
   );
 }
+
+const STATUS_LABELS = { yes: 'Yes', iffy: 'Iffy', no: 'Not going', pending: 'No response' };
 
 const RSVP_OPTIONS = [
   { value: 'yes', label: 'Yes' },

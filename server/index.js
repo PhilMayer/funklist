@@ -236,6 +236,9 @@ function validateEvent(body) {
 app.get('/api/bands/:bandId/events', (req, res) => {
   const me = requireMember(req, req.params.bandId);
   const when = req.query.when === 'past' ? 'past' : 'upcoming';
+  const dateFilter = when === 'past'
+    ? "e.event_date < date('now', 'localtime')"
+    : "e.event_date >= date('now', 'localtime')";
   const rows = db.prepare(`
     SELECT e.id, e.type, e.title, e.event_date, d.venue, d.call_time, d.hit_time,
            SUM(a.status = 'yes')  AS yes_count,
@@ -245,24 +248,25 @@ app.get('/api/bands/:bandId/events', (req, res) => {
     FROM events e
     LEFT JOIN event_details d ON d.event_id = e.id
     LEFT JOIN event_attendance a ON a.event_id = e.id
-    WHERE e.band_id = @bandId
-      AND ${when === 'past' ? "e.event_date < date('now', 'localtime')" : "e.event_date >= date('now', 'localtime')"}
+    WHERE e.band_id = @bandId AND ${dateFilter}
     GROUP BY e.id
     ORDER BY e.event_date ${when === 'past' ? 'DESC' : 'ASC'}, d.call_time ASC
   `).all({ bandId: me.band_id, memberId: me.id });
 
-  // Yes/iffy responders for every listed event, in instrument order, so the list can show names.
-  const responders = db.prepare(`
-    SELECT a.event_id, a.status, m.id, m.name, i.name AS instrument
-    FROM event_attendance a
-    JOIN events e ON e.id = a.event_id
-    JOIN band_members m ON m.id = a.member_id
+  // Every band member for every listed event, with their response (null = hasn't responded),
+  // grouped by the instrument they're playing. Within an instrument: yes, iffy, no response, no.
+  const attendance = db.prepare(`
+    SELECT e.id AS event_id, a.status, m.id, m.name, i.name AS instrument
+    FROM events e
+    JOIN band_members m ON m.band_id = e.band_id
+    LEFT JOIN event_attendance a ON a.event_id = e.id AND a.member_id = m.id
     LEFT JOIN instruments i ON i.id = COALESCE(a.instrument_id, m.instrument_id)
-    WHERE e.band_id = ? AND a.status IN ('yes', 'iffy')
-    ORDER BY COALESCE(i.sort_order, 9999), i.name, a.status = 'iffy', m.name
+    WHERE e.band_id = ? AND ${dateFilter}
+    ORDER BY COALESCE(i.sort_order, 9999), i.name,
+             CASE a.status WHEN 'yes' THEN 0 WHEN 'iffy' THEN 1 WHEN 'no' THEN 3 ELSE 2 END, m.name
   `).all(me.band_id);
   const byEvent = new Map();
-  for (const { event_id, status, id, name, instrument } of responders) {
+  for (const { event_id, status, id, name, instrument } of attendance) {
     if (!byEvent.has(event_id)) byEvent.set(event_id, []);
     byEvent.get(event_id).push({ id, name, instrument, status });
   }
@@ -272,6 +276,7 @@ app.get('/api/bands/:bandId/events', (req, res) => {
     yes_count: r.yes_count || 0,
     iffy_count: r.iffy_count || 0,
     no_count: r.no_count || 0,
+    no_response_count: (byEvent.get(r.id) || []).filter((m) => !m.status).length,
     attendees: byEvent.get(r.id) || [],
   })));
 });

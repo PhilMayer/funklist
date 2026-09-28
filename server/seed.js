@@ -30,7 +30,11 @@ if (db.prepare('SELECT id FROM bands WHERE name = ?').get(BAND)) {
   process.exit(0);
 }
 
-const instrumentId = (name) => db.prepare('SELECT id FROM instruments WHERE name = ?').get(name).id;
+// Creates the instrument if it isn't in the default list (see db.js), so the seed can't break.
+const instrumentId = (name) => {
+  db.prepare('INSERT OR IGNORE INTO instruments (name) VALUES (?)').run(name);
+  return db.prepare('SELECT id FROM instruments WHERE name = ?').get(name).id;
+};
 const isoDate = (daysFromNow) => {
   const d = new Date();
   d.setDate(d.getDate() + daysFromNow);
@@ -41,8 +45,8 @@ db.transaction(() => {
   const bandId = db.prepare('INSERT INTO bands (name, invite_code) VALUES (?, ?)').run(BAND, newInviteCode()).lastInsertRowid;
 
   const members = [
-    ['Aretha', 'Vocals'], ['Bootsy', 'Bass'], ['Clyde', 'Drums'], ['Maceo', 'Saxophone'],
-    ['Fred', 'Trombone'], ['Nile', 'Guitar'], ['Bernie', 'Keys'], ['Sheila', 'Percussion'],
+    ['Aretha', 'Vocals'], ['Bootsy', 'Tubas'], ['Clyde', 'Percussion'], ['Maceo', 'Saxophones'],
+    ['Fred', 'Midhorns'], ['Nile', 'Trumpets'], ['Bernie', 'Trumpets'], ['Sheila', 'Percussion'],
   ].map(([name, inst]) =>
     db.prepare('INSERT INTO band_members (band_id, name, instrument_id) VALUES (?, ?, ?)')
       .run(bandId, name, instrumentId(inst)).lastInsertRowid
