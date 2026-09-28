@@ -7,6 +7,7 @@ import EventDetail from './components/EventDetail';
 import EventForm from './components/EventForm';
 import JoinBand from './components/JoinBand';
 import MembersPanel from './components/MembersPanel';
+import { notifiedMessage } from './messages';
 
 const load = (key) => {
   try { return JSON.parse(localStorage.getItem(key)); } catch { return null; }
@@ -19,15 +20,6 @@ const readJoinCode = () => new URLSearchParams(window.location.search).get('join
 // Links to an event (e.g. from notification emails) look like /?event=123.
 const readEventId = () => Number(new URLSearchParams(window.location.search).get('event')) || null;
 
-function notifiedMessage({ notified, missing_email: missing, email_enabled: enabled }) {
-  if (notified && !enabled) return 'Email isn’t set up on this server yet, so no one was emailed about this event.';
-  const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
-  const noEmail = missing
-    ? `${plural(missing, 'bandmate has', 'bandmates have')} no email address yet; add it on the Members tab.`
-    : '';
-  if (notified) return `Emailed ${plural(notified, 'bandmate', 'bandmates')} about this event. ${noEmail}`.trim();
-  return noEmail ? `No one was emailed: ${noEmail}` : '';
-}
 const clearJoinCode = () => {
   const url = new URL(window.location.href);
   url.searchParams.delete('join');
@@ -196,6 +188,7 @@ function SignedInApp({ user, joinCode, onDoneJoining, onSignOut }) {
             instruments={instruments}
             onBack={() => setView({ name: 'list' })}
             onEdit={(event) => setView({ name: 'edit', event })}
+            onNotice={(text) => setNotice(text ? { eventId: view.id, text } : null)}
             onError={setError}
           />
         )}

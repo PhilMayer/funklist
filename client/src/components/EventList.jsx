@@ -59,7 +59,10 @@ export default function EventList({ bandId, me, onOpen, onNew, onError }) {
               <button className="event-card-open" onClick={() => onOpen(e.id)}>
                 <span className={`badge ${e.type}`}>{e.type}</span>
                 <div className="event-card-main">
-                  <strong>{e.title}</strong>
+                  <strong>
+                    {e.title}
+                    {e.status === 'confirmed' && <span className="status-tag">Confirmed</span>}
+                  </strong>
                   <span className="muted">
                     {formatDate(e.event_date)}
                     {e.call_time && ` · Call ${formatTime(e.call_time)}`}

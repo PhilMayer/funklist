@@ -10,7 +10,7 @@ const { newInviteCode } = require('./db');
 const { HttpError, clean } = require('./errors');
 const auth = require('./auth');
 const { quorumFor } = require('./quorum');
-const { notifyNewEvent } = require('./notify');
+const { notifyBand } = require('./notify');
 const { emailEnabled } = require('./mailer');
 
 const app = express();
@@ -25,6 +25,8 @@ app.use('/api', auth.requireUser);
 
 const EVENT_TYPES = ['rehearsal', 'gig'];
 const RSVP_STATUSES = ['yes', 'no', 'iffy'];
+// Statuses a member can set from the Event page (new events start 'unconfirmed').
+const SETTABLE_EVENT_STATUSES = ['confirmed', 'cancelled'];
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -47,7 +49,7 @@ function requireMember(req, bandId) {
 }
 
 function requireEventMember(req, eventId) {
-  const event = findOr404('SELECT id, band_id FROM events WHERE id = ?', eventId, 'Event');
+  const event = findOr404('SELECT id, band_id, status FROM events WHERE id = ?', eventId, 'Event');
   try {
     return { event, member: requireMember(req, event.band_id) };
   } catch {
@@ -248,11 +250,12 @@ function validateEvent(body) {
 app.get('/api/bands/:bandId/events', (req, res) => {
   const me = requireMember(req, req.params.bandId);
   const when = req.query.when === 'past' ? 'past' : 'upcoming';
-  const dateFilter = when === 'past'
+  // Cancelled events are left off the list (they stay reachable by link).
+  const dateFilter = (when === 'past'
     ? "e.event_date < date('now', 'localtime')"
-    : "e.event_date >= date('now', 'localtime')";
+    : "e.event_date >= date('now', 'localtime')") + " AND e.status != 'cancelled'";
   const rows = db.prepare(`
-    SELECT e.id, e.type, e.title, e.event_date, d.venue, d.call_time, d.hit_time,
+    SELECT e.id, e.type, e.title, e.event_date, e.status, d.venue, d.call_time, d.hit_time,
            SUM(a.status = 'yes')  AS yes_count,
            SUM(a.status = 'iffy') AS iffy_count,
            SUM(a.status = 'no')   AS no_count,
@@ -299,10 +302,11 @@ app.get('/api/bands/:bandId/events', (req, res) => {
 function getEvent(eventId) {
   const event = db.prepare(`
     SELECT e.*, d.venue, d.call_time, d.hit_time, d.set_list, d.description,
-           c.name AS created_by_name
+           c.name AS created_by_name, su.name AS status_updated_by_name
     FROM events e
     LEFT JOIN event_details d ON d.event_id = e.id
     LEFT JOIN band_members c ON c.id = e.created_by
+    LEFT JOIN band_members su ON su.id = e.status_updated_by
     WHERE e.id = ?
   `).get(eventId);
   if (!event) throw new HttpError(404, 'Event not found');
@@ -338,6 +342,7 @@ function getEvent(eventId) {
 
   return {
     ...event,
+    quorum: quorumFor(members),
     attendance: {
       going_by_instrument: goingByInstrument,
       iffy: pick((m) => m.status === 'iffy'),
@@ -366,28 +371,48 @@ const createEvent = db.transaction((bandId, createdBy, e) => {
   return eventId;
 });
 
+// Emails everyone else in the band about an event (kind: 'created' | 'confirmed' | 'cancelled').
+// Sending happens in the background; returns counts for the confirmation message in the app.
+function emailBand(req, { kind, event, actor }) {
+  const others = db.prepare(`
+    SELECT m.id, m.name, m.email, a.status AS rsvp
+    FROM band_members m
+    LEFT JOIN event_attendance a ON a.member_id = m.id AND a.event_id = ?
+    WHERE m.band_id = ? AND m.id != ?
+  `).all(event.id, event.band_id, actor.id);
+  const recipients = others.filter((m) => m.email);
+  if (recipients.length) {
+    const bandName = db.prepare('SELECT name FROM bands WHERE id = ?').get(event.band_id).name;
+    // Not awaited: the response doesn't wait on the mail server.
+    notifyBand({ kind, event, bandName, actor, recipients, appUrl: appUrl(req) })
+      .catch((err) => console.error(`Event ${event.id}: ${kind} notification failed: ${err.message}`));
+  }
+  return { notified: recipients.length, missing_email: others.length - recipients.length, email_enabled: emailEnabled };
+}
+
 // Emails the rest of the band about the new event unless the request sends notify: false.
 app.post('/api/bands/:bandId/events', (req, res) => {
   const me = requireMember(req, req.params.bandId);
   const eventId = createEvent(me.band_id, me.id, validateEvent(req.body));
   const event = getEvent(eventId);
+  const emailed = req.body.notify !== false
+    ? emailBand(req, { kind: 'created', event, actor: me })
+    : { notified: 0, missing_email: 0, email_enabled: emailEnabled };
+  res.status(201).json({ ...event, ...emailed });
+});
 
-  let notified = 0;
-  let missingEmail = 0;
-  if (req.body.notify !== false) {
-    const others = db.prepare('SELECT id, name, email FROM band_members WHERE band_id = ? AND id != ?')
-      .all(me.band_id, me.id);
-    const recipients = others.filter((m) => m.email);
-    notified = recipients.length;
-    missingEmail = others.length - recipients.length;
-    if (recipients.length) {
-      const bandName = db.prepare('SELECT name FROM bands WHERE id = ?').get(me.band_id).name;
-      // Not awaited: the response doesn't wait on the mail server.
-      notifyNewEvent({ event, bandName, creator: me, recipients, appUrl: appUrl(req) })
-        .catch((err) => console.error(`Event ${eventId}: notification failed: ${err.message}`));
-    }
+// Confirm or cancel an event (a cancelled event can be confirmed again). Emails the band on change.
+app.put('/api/events/:eventId/status', (req, res) => {
+  const { event, member } = requireEventMember(req, req.params.eventId);
+  const status = req.body.status;
+  if (!SETTABLE_EVENT_STATUSES.includes(status)) throw new HttpError(400, 'Status must be "confirmed" or "cancelled"');
+  if (status === event.status) {
+    return res.json({ ...getEvent(event.id), notified: 0, missing_email: 0, email_enabled: emailEnabled, unchanged: true });
   }
-  res.status(201).json({ ...event, notified, missing_email: missingEmail, email_enabled: emailEnabled });
+  db.prepare(`UPDATE events SET status = ?, status_updated_at = datetime('now'), status_updated_by = ? WHERE id = ?`)
+    .run(status, member.id, event.id);
+  const updated = getEvent(event.id);
+  res.json({ ...updated, ...emailBand(req, { kind: status, event: updated, actor: member }) });
 });
 
 const updateEvent = db.transaction((eventId, e) => {
@@ -419,6 +444,7 @@ app.delete('/api/events/:eventId', (req, res) => {
 // You can only RSVP for yourself: the member comes from the session, not the request body.
 app.put('/api/events/:eventId/rsvp', (req, res) => {
   const { event, member } = requireEventMember(req, req.params.eventId);
+  if (event.status === 'cancelled') throw new HttpError(409, 'This event was cancelled, so it no longer takes RSVPs');
   const memberId = member.id;
   const status = req.body.status;
   if (!RSVP_STATUSES.includes(status)) throw new HttpError(400, 'Status must be yes, no, or iffy');

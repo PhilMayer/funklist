@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api, formatDate, formatTime } from '../api';
+import { notifiedMessage } from '../messages';
 
 const RSVP_OPTIONS = [
   { value: 'yes', label: 'Yes' },
@@ -7,7 +8,7 @@ const RSVP_OPTIONS = [
   { value: 'no', label: 'No' },
 ];
 
-export default function EventDetail({ eventId, me, instruments, onBack, onEdit, onError }) {
+export default function EventDetail({ eventId, me, instruments, onBack, onEdit, onNotice, onError }) {
   const [event, setEvent] = useState(null);
   const [saving, setSaving] = useState(false);
   // Instrument picked before RSVPing, held until the first RSVP click. Keyed by member so
@@ -46,6 +47,29 @@ export default function EventDetail({ eventId, me, instruments, onBack, onEdit, 
     else setPendingInstrument({ memberId: me.id, value });
   }
 
+  async function changeStatus(status) {
+    const quorumNote = event.quorum.met
+      ? ''
+      : `It doesn’t have quorum yet (still needed: ${event.quorum.needed.map((n) => `${n.count} ${n.label}`).join(', ')}).\n\n`;
+    const question = {
+      confirmed: event.status === 'cancelled'
+        ? `Reinstate "${event.title}" as confirmed?\n\n${quorumNote}The band will be emailed that it’s back on.`
+        : `Confirm "${event.title}"?\n\n${quorumNote}The band will be emailed that it’s confirmed.`,
+      cancelled: `Cancel "${event.title}"?\n\nIt will be hidden from the events list and the band will be emailed that it’s cancelled.`,
+    }[status];
+    if (!window.confirm(question)) return;
+    setSaving(true);
+    try {
+      const updated = await api.setEventStatus(event.id, status);
+      setEvent(updated);
+      if (!updated.unchanged) onNotice(notifiedMessage(updated));
+    } catch (e) {
+      onError(e.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function handleDelete() {
     if (!window.confirm(`Delete "${event.title}"? This cannot be undone.`)) return;
     try {
@@ -77,12 +101,15 @@ export default function EventDetail({ eventId, me, instruments, onBack, onEdit, 
         )}
       </div>
 
+      <StatusBar event={event} canChange={Boolean(me)} saving={saving} onChange={changeStatus} />
+
       <dl className="facts">
         <div><dt>Venue</dt><dd>{event.venue || '—'}</dd></div>
         <div><dt>Call time</dt><dd>{formatTime(event.call_time) || '—'}</dd></div>
         <div><dt>Hit time</dt><dd>{formatTime(event.hit_time) || '—'}</dd></div>
       </dl>
 
+      {event.status !== 'cancelled' && (
       <div className="rsvp-box">
         {me ? (
           <>
@@ -117,6 +144,7 @@ export default function EventDetail({ eventId, me, instruments, onBack, onEdit, 
           <span className="muted">Loading…</span>
         )}
       </div>
+      )}
 
       <div className="grid">
         <div className="card">
@@ -167,6 +195,43 @@ export default function EventDetail({ eventId, me, instruments, onBack, onEdit, 
         </div>
       </div>
     </section>
+  );
+}
+
+// "When" for status changes; stored as UTC 'YYYY-MM-DD HH:MM:SS'.
+const changedOn = (utc) =>
+  utc ? new Date(`${utc.replace(' ', 'T')}Z`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '';
+
+function StatusBar({ event, canChange, saving, onChange }) {
+  const by = [event.status_updated_by_name && `by ${event.status_updated_by_name}`, changedOn(event.status_updated_at)]
+    .filter(Boolean).join(' on ');
+  const status = {
+    unconfirmed: { label: 'Not confirmed yet', note: event.quorum.met ? 'Quorum reached' : null },
+    confirmed: { label: '✓ Confirmed', note: by },
+    cancelled: { label: 'Cancelled', note: `${by ? `${by}. ` : ''}It’s hidden from the events list.` },
+  }[event.status];
+
+  return (
+    <div className={`status-bar ${event.status}`} role="status">
+      <div>
+        <strong>{status.label}</strong>
+        {status.note && <span className="status-note"> · {status.note}</span>}
+      </div>
+      {canChange && (
+        <div className="status-actions">
+          {event.status !== 'confirmed' && (
+            <button className="confirm-btn" disabled={saving} onClick={() => onChange('confirmed')}>
+              {event.status === 'cancelled' ? 'Reinstate as confirmed' : '✓ Confirm event'}
+            </button>
+          )}
+          {event.status !== 'cancelled' && (
+            <button className="ghost danger" disabled={saving} onClick={() => onChange('cancelled')}>
+              Cancel event
+            </button>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 

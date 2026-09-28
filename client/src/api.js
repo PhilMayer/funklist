@@ -40,6 +40,8 @@ export const api = {
   createEvent: (bandId, event) => request('POST', `/bands/${bandId}/events`, event),
   updateEvent: (id, event) => request('PUT', `/events/${id}`, event),
   deleteEvent: (id) => request('DELETE', `/events/${id}`),
+  // status: 'confirmed' | 'cancelled'. Emails the band when it changes.
+  setEventStatus: (id, status) => request('PUT', `/events/${id}/status`, { status }),
   // Always RSVPs as the signed-in member.
   // instrumentId: undefined keeps the current choice; null means the member's primary instrument.
   rsvp: (eventId, status, instrumentId) =>

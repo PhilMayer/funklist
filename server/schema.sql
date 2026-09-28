@@ -53,7 +53,11 @@ CREATE TABLE IF NOT EXISTS events (
   title       TEXT NOT NULL,
   event_date  TEXT NOT NULL,              -- YYYY-MM-DD
   created_by  INTEGER REFERENCES band_members(id) ON DELETE SET NULL,
-  created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+  created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+  -- Unconfirmed until a member confirms or cancels it. Cancelled events are hidden from the list.
+  status             TEXT NOT NULL DEFAULT 'unconfirmed' CHECK (status IN ('unconfirmed', 'confirmed', 'cancelled')),
+  status_updated_at  TEXT,
+  status_updated_by  INTEGER REFERENCES band_members(id) ON DELETE SET NULL
 );
 CREATE INDEX IF NOT EXISTS idx_events_band_date ON events(band_id, event_date);
 

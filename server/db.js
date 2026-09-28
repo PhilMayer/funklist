@@ -24,6 +24,14 @@ if (!hasColumn('band_members', 'user_id')) {
 if (!hasColumn('bands', 'invite_code')) {
   db.exec('ALTER TABLE bands ADD COLUMN invite_code TEXT');
 }
+if (!hasColumn('events', 'status')) {
+  db.exec(`
+    ALTER TABLE events ADD COLUMN status TEXT NOT NULL DEFAULT 'unconfirmed'
+      CHECK (status IN ('unconfirmed', 'confirmed', 'cancelled'));
+    ALTER TABLE events ADD COLUMN status_updated_at TEXT;
+    ALTER TABLE events ADD COLUMN status_updated_by INTEGER REFERENCES band_members(id) ON DELETE SET NULL;
+  `);
+}
 // Indexes on migrated columns live here so they run after the columns exist.
 db.exec(`
   CREATE UNIQUE INDEX IF NOT EXISTS idx_members_band_user ON band_members(band_id, user_id) WHERE user_id IS NOT NULL;

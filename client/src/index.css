@@ -304,3 +304,21 @@ textarea { resize: vertical; }
 .email-input { width: 100%; min-width: 11rem; padding: 0.35rem 0.5rem; font-size: 0.85rem; }
 .email-input:not(:focus) { border-color: transparent; background: transparent; }
 .email-input:not(:focus):hover { border-color: var(--border); }
+
+/* Event status */
+.status-bar {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.6rem 1rem;
+  padding: 0.7rem 1rem; margin-bottom: 1rem; border-radius: var(--radius);
+  background: var(--surface); border: 1px solid var(--border);
+}
+.status-bar.confirmed { background: var(--yes-bg); border-color: transparent; color: var(--yes); }
+.status-bar.cancelled { background: var(--no-bg); border-color: transparent; color: var(--no); }
+.status-note { font-size: 0.9rem; opacity: 0.85; }
+.status-bar.unconfirmed .status-note { color: var(--yes); }
+.status-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.confirm-btn { background: var(--yes); color: var(--surface); font-weight: 600; }
+.status-tag {
+  display: inline-block; margin-left: 0.5rem; padding: 0.05rem 0.45rem; border-radius: 6px; vertical-align: 2px;
+  font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
+  color: var(--yes); border: 1px solid currentColor;
+}
