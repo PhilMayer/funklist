@@ -16,6 +16,18 @@ const save = (key, value) => {
 };
 
 const readJoinCode = () => new URLSearchParams(window.location.search).get('join');
+// Links to an event (e.g. from notification emails) look like /?event=123.
+const readEventId = () => Number(new URLSearchParams(window.location.search).get('event')) || null;
+
+function notifiedMessage({ notified, missing_email: missing, email_enabled: enabled }) {
+  if (notified && !enabled) return 'Email isn’t set up on this server yet, so no one was emailed about this event.';
+  const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+  const noEmail = missing
+    ? `${plural(missing, 'bandmate has', 'bandmates have')} no email address yet; add it on the Members tab.`
+    : '';
+  if (notified) return `Emailed ${plural(notified, 'bandmate', 'bandmates')} about this event. ${noEmail}`.trim();
+  return noEmail ? `No one was emailed: ${noEmail}` : '';
+}
 const clearJoinCode = () => {
   const url = new URL(window.location.href);
   url.searchParams.delete('join');
@@ -64,8 +76,12 @@ function SignedInApp({ user, joinCode, onDoneJoining, onSignOut }) {
   const [members, setMembers] = useState([]);
   const [instruments, setInstruments] = useState([]);
   // view: list | event {id} | new | edit {event} | members | create-band
-  const [view, setView] = useState({ name: 'list' });
+  const [view, setView] = useState(() => {
+    const eventId = readEventId();
+    return eventId ? { name: 'event', id: eventId } : { name: 'list' };
+  });
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState(null); // { eventId, text } shown on that event's page
 
   const refreshBands = useCallback(
     () => api.bands().then((b) => {
@@ -80,9 +96,27 @@ function SignedInApp({ user, joinCode, onDoneJoining, onSignOut }) {
       .then(([b, i]) => {
         setInstruments(i);
         setBandId((current) => (b.some((x) => x.id === current) ? current : b[0]?.id ?? null));
+        // Opened from an event link: switch to that event's band.
+        const eventId = readEventId();
+        if (eventId) {
+          api.event(eventId)
+            .then((ev) => setBandId(ev.band_id))
+            .catch(() => {
+              setError('That event isn’t available. It may have been deleted, or you’re not in its band.');
+              setView({ name: 'list' });
+            });
+        }
       })
       .catch((e) => setError(e.message));
   }, [refreshBands]);
+
+  // Keep ?event=ID in the address bar while viewing an event, so the page can be shared or reloaded.
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if (view.name === 'event') url.searchParams.set('event', view.id);
+    else url.searchParams.delete('event');
+    if (url.href !== window.location.href) window.history.replaceState(null, '', url);
+  }, [view]);
 
   const refreshMembers = useCallback(() => {
     if (!bandId) return setMembers([]);
@@ -170,7 +204,11 @@ function SignedInApp({ user, joinCode, onDoneJoining, onSignOut }) {
             bandId={bandId}
             initial={view.event}
             onCancel={() => setView(view.event ? { name: 'event', id: view.event.id } : { name: 'list' })}
-            onSaved={(event) => setView({ name: 'event', id: event.id })}
+            onSaved={(event) => {
+              setView({ name: 'event', id: event.id });
+              const text = view.name === 'new' ? notifiedMessage(event) : '';
+              setNotice(text ? { eventId: event.id, text } : null);
+            }}
           />
         )}
         {view.name === 'members' && (
@@ -226,6 +264,9 @@ function SignedInApp({ user, joinCode, onDoneJoining, onSignOut }) {
 
       {error && (
         <div className="banner error" onClick={() => setError('')}>{error} <span>✕</span></div>
+      )}
+      {notice && view.name === 'event' && view.id === notice.eventId && (
+        <div className="banner info" role="status" onClick={() => setNotice(null)}>{notice.text} <span>✕</span></div>
       )}
 
       <main className="content">{body}</main>

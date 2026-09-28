@@ -10,6 +10,8 @@ const { newInviteCode } = require('./db');
 const { HttpError, clean } = require('./errors');
 const auth = require('./auth');
 const { quorumFor } = require('./quorum');
+const { notifyNewEvent } = require('./notify');
+const { emailEnabled } = require('./mailer');
 
 const app = express();
 // Behind a hosting proxy (e.g. Fly.io), trust its X-Forwarded-For so req.ip is the real client
@@ -25,6 +27,10 @@ const EVENT_TYPES = ['rehearsal', 'gig'];
 const RSVP_STATUSES = ['yes', 'no', 'iffy'];
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// Public base URL for links in emails. Set APP_URL in production; otherwise use the request's host.
+const appUrl = (req) => (process.env.APP_URL || `${req.protocol}://${req.get('host')}`).replace(/\/$/, '');
 
 function findOr404(sql, id, what) {
   const row = db.prepare(sql).get(id);
@@ -88,8 +94,8 @@ app.post('/api/bands', (req, res) => {
   const instrumentId = validInstrumentId(req.body.instrument_id);
   const bandId = db.transaction(() => {
     const id = db.prepare('INSERT INTO bands (name, invite_code) VALUES (?, ?)').run(name, newInviteCode()).lastInsertRowid;
-    db.prepare('INSERT INTO band_members (band_id, name, instrument_id, user_id) VALUES (?, ?, ?, ?)')
-      .run(id, req.user.display_name, instrumentId, req.user.id);
+    db.prepare('INSERT INTO band_members (band_id, name, email, instrument_id, user_id) VALUES (?, ?, ?, ?, ?)')
+      .run(id, req.user.display_name, req.user.email, instrumentId, req.user.id);
     return id;
   })();
   res.status(201).json(db.prepare(`
@@ -139,12 +145,15 @@ app.post('/api/invites/:code/join', (req, res) => {
     return res.json({ id: band.id, name: band.name });
   }
   if (req.body.member_id) {
-    const { changes } = db.prepare('UPDATE band_members SET user_id = ? WHERE id = ? AND band_id = ? AND user_id IS NULL')
-      .run(req.user.id, Number(req.body.member_id), band.id);
+    const { changes } = db.prepare(`
+      UPDATE band_members SET user_id = ?, email = COALESCE(email, ?)
+      WHERE id = ? AND band_id = ? AND user_id IS NULL
+    `).run(req.user.id, req.user.email, Number(req.body.member_id), band.id);
     if (!changes) throw new HttpError(409, 'That member profile has already been claimed');
   } else {
-    db.prepare('INSERT INTO band_members (band_id, name, instrument_id, user_id) VALUES (?, ?, ?, ?)')
-      .run(band.id, clean(req.body.name) || req.user.display_name, validInstrumentId(req.body.instrument_id), req.user.id);
+    db.prepare('INSERT INTO band_members (band_id, name, email, instrument_id, user_id) VALUES (?, ?, ?, ?, ?)')
+      .run(band.id, clean(req.body.name) || req.user.display_name, req.user.email,
+        validInstrumentId(req.body.instrument_id), req.user.id);
   }
   res.status(201).json({ id: band.id, name: band.name });
 });
@@ -170,7 +179,9 @@ app.get('/api/bands/:bandId/members', (req, res) => {
 function validateMember(body) {
   const name = clean(body.name);
   if (!name) throw new HttpError(400, 'Member name is required');
-  return { name, email: clean(body.email), instrumentId: validInstrumentId(body.instrument_id) };
+  const email = clean(body.email);
+  if (email && !EMAIL_RE.test(email)) throw new HttpError(400, `"${email}" doesn't look like an email address`);
+  return { name, email, instrumentId: validInstrumentId(body.instrument_id) };
 }
 
 // Adds a member profile without an account (e.g. a sub). They can claim it later via the invite link.
@@ -355,10 +366,28 @@ const createEvent = db.transaction((bandId, createdBy, e) => {
   return eventId;
 });
 
+// Emails the rest of the band about the new event unless the request sends notify: false.
 app.post('/api/bands/:bandId/events', (req, res) => {
   const me = requireMember(req, req.params.bandId);
   const eventId = createEvent(me.band_id, me.id, validateEvent(req.body));
-  res.status(201).json(getEvent(eventId));
+  const event = getEvent(eventId);
+
+  let notified = 0;
+  let missingEmail = 0;
+  if (req.body.notify !== false) {
+    const others = db.prepare('SELECT id, name, email FROM band_members WHERE band_id = ? AND id != ?')
+      .all(me.band_id, me.id);
+    const recipients = others.filter((m) => m.email);
+    notified = recipients.length;
+    missingEmail = others.length - recipients.length;
+    if (recipients.length) {
+      const bandName = db.prepare('SELECT name FROM bands WHERE id = ?').get(me.band_id).name;
+      // Not awaited: the response doesn't wait on the mail server.
+      notifyNewEvent({ event, bandName, creator: me, recipients, appUrl: appUrl(req) })
+        .catch((err) => console.error(`Event ${eventId}: notification failed: ${err.message}`));
+    }
+  }
+  res.status(201).json({ ...event, notified, missing_email: missingEmail, email_enabled: emailEnabled });
 });
 
 const updateEvent = db.transaction((eventId, e) => {

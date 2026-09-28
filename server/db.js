@@ -34,6 +34,12 @@ for (const { id } of db.prepare('SELECT id FROM bands WHERE invite_code IS NULL'
   setInvite.run(newInviteCode(), id);
 }
 db.prepare("DELETE FROM sessions WHERE expires_at < datetime('now')").run();
+// Member profiles linked to an account with an email (e.g. Google sign-in) use it for notifications
+// unless the profile already has its own.
+db.prepare(`
+  UPDATE band_members SET email = (SELECT u.email FROM users u WHERE u.id = band_members.user_id)
+  WHERE email IS NULL AND user_id IS NOT NULL
+`).run();
 
 const DEFAULT_INSTRUMENTS = [
   'Vocals', 'Percussion', 'Trumpets', 'Midhorns', 'Saxophones', 'Tubas', 'Dance Team'

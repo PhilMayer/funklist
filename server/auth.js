@@ -18,6 +18,7 @@ const COOKIE_SECURE = process.env.COOKIE_SECURE
   : process.env.NODE_ENV === 'production';
 
 const USERNAME_RE = /^[a-zA-Z0-9_.-]{3,32}$/;
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MIN_PASSWORD = 8;
 const MAX_PASSWORD = 200;
 
@@ -133,19 +134,21 @@ router.post('/register', rateLimit, async (req, res) => {
   const username = clean(req.body.username);
   const password = typeof req.body.password === 'string' ? req.body.password : '';
   const displayName = clean(req.body.display_name) || username;
+  const email = clean(req.body.email); // optional; used for event notifications
   if (!username || !USERNAME_RE.test(username)) {
     throw new HttpError(400, 'Username must be 3–32 characters: letters, numbers, dot, dash, or underscore');
   }
   if (password.length < MIN_PASSWORD || password.length > MAX_PASSWORD) {
     throw new HttpError(400, `Password must be at least ${MIN_PASSWORD} characters`);
   }
+  if (email && !EMAIL_RE.test(email)) throw new HttpError(400, `"${email}" doesn't look like an email address`);
   if (db.prepare('SELECT 1 FROM users WHERE username = ?').get(username)) {
     throw new HttpError(409, 'That username is taken');
   }
   const passwordHash = await hashPassword(password);
   const { lastInsertRowid } = db
-    .prepare('INSERT INTO users (username, password_hash, display_name) VALUES (?, ?, ?)')
-    .run(username, passwordHash, displayName);
+    .prepare('INSERT INTO users (username, password_hash, email, display_name) VALUES (?, ?, ?, ?)')
+    .run(username, passwordHash, email, displayName);
   startSession(res, lastInsertRowid);
   res.status(201).json({ user: getUser(lastInsertRowid) });
 });

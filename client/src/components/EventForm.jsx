@@ -18,6 +18,7 @@ export default function EventForm({ bandId, initial, onCancel, onSaved }) {
       ? Object.fromEntries(Object.keys(EMPTY).map((k) => [k, initial[k] ?? '']))
       : EMPTY
   );
+  const [notify, setNotify] = useState(true); // new events only
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -30,7 +31,7 @@ export default function EventForm({ bandId, initial, onCancel, onSaved }) {
     try {
       const saved = initial
         ? await api.updateEvent(initial.id, form)
-        : await api.createEvent(bandId, form);
+        : await api.createEvent(bandId, { ...form, notify });
       onSaved(saved);
     } catch (err) {
       setError(err.message);
@@ -92,6 +93,13 @@ export default function EventForm({ bandId, initial, onCancel, onSaved }) {
         <span className="label">Description</span>
         <textarea rows={4} value={form.description} onChange={set('description')} placeholder="Dress code, parking, load-in notes…" />
       </label>
+
+      {!initial && (
+        <label className="checkbox">
+          <input type="checkbox" checked={notify} onChange={(e) => setNotify(e.target.checked)} />
+          <span>Email the band about this event, with a link to RSVP</span>
+        </label>
+      )}
 
       {error && <p className="form-error">{error}</p>}
 

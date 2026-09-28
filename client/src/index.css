@@ -295,3 +295,12 @@ textarea { resize: vertical; }
   .user-name { display: none; }
 }
 .form > p { margin: -0.5rem 0 0; }
+
+/* Notifications */
+.banner.info { background: var(--yes-bg); color: var(--yes); }
+.checkbox { display: flex; align-items: center; gap: 0.5rem; font-size: 0.9rem; cursor: pointer; }
+.checkbox input { accent-color: var(--accent); width: 1rem; height: 1rem; }
+.table-wrap { overflow-x: auto; }
+.email-input { width: 100%; min-width: 11rem; padding: 0.35rem 0.5rem; font-size: 0.85rem; }
+.email-input:not(:focus) { border-color: transparent; background: transparent; }
+.email-input:not(:focus):hover { border-color: var(--border); }

@@ -11,6 +11,7 @@ primary_region = 'ord'
 [env]
   NODE_ENV = 'production'
   TRUST_PROXY = '1'
+  APP_URL = 'https://funklist.fly.dev'
 
 [[mounts]]
   source = 'funklist_data'

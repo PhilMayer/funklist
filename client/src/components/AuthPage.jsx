@@ -4,7 +4,7 @@ import GoogleButton from './GoogleButton';
 
 export default function AuthPage({ googleClientId, joining, onSignedIn }) {
   const [mode, setMode] = useState('signin'); // 'signin' | 'register'
-  const [form, setForm] = useState({ username: '', password: '', display_name: '' });
+  const [form, setForm] = useState({ username: '', password: '', display_name: '', email: '' });
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -75,6 +75,18 @@ export default function AuthPage({ googleClientId, joining, onSignedIn }) {
                 onChange={set('display_name')}
                 placeholder="How bandmates will see you"
                 autoComplete="name"
+              />
+            </label>
+          )}
+          {mode === 'register' && (
+            <label className="field">
+              <span className="label">Email <span className="muted">(optional)</span></span>
+              <input
+                type="email"
+                value={form.email}
+                onChange={set('email')}
+                placeholder="For new-event notifications"
+                autoComplete="email"
               />
             </label>
           )}

@@ -8,6 +8,7 @@ export default function MembersPanel({
 }) {
   const [name, setName] = useState('');
   const [instrumentId, setInstrumentId] = useState('');
+  const [email, setEmail] = useState('');
   const [inviteCode, setInviteCode] = useState(null);
   const [copied, setCopied] = useState(false);
 
@@ -49,8 +50,9 @@ export default function MembersPanel({
     e.preventDefault();
     try {
       const instrument_id = await resolveInstrument(instrumentId);
-      await api.addMember(bandId, { name, instrument_id });
+      await api.addMember(bandId, { name, email, instrument_id });
       setName('');
+      setEmail('');
       setInstrumentId('');
       onChanged();
     } catch (err) {
@@ -66,6 +68,16 @@ export default function MembersPanel({
     } catch (err) {
       onError(err.message);
     }
+  }
+
+  async function changeEmail(member, value) {
+    if (value.trim() === (member.email ?? '')) return;
+    try {
+      await api.updateMember(member.id, { name: member.name, email: value, instrument_id: member.instrument_id });
+    } catch (err) {
+      onError(err.message);
+    }
+    onChanged(); // also resets the field if the save failed
   }
 
   async function remove(member) {
@@ -117,6 +129,7 @@ export default function MembersPanel({
       </p>
       <form className="add-member" onSubmit={handleAdd}>
         <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Name" required />
+        <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email (optional)" />
         <select value={instrumentId} onChange={(e) => setInstrumentId(e.target.value)}>
           {instrumentOptions}
         </select>
@@ -126,9 +139,10 @@ export default function MembersPanel({
       {members.length === 0 ? (
         <p className="muted">No members yet. Add yourself first!</p>
       ) : (
+        <div className="table-wrap">
         <table className="members">
           <thead>
-            <tr><th>Name</th><th>Instrument</th><th /></tr>
+            <tr><th>Name</th><th>Instrument</th><th>Email <span className="muted">(for event emails)</span></th><th /></tr>
           </thead>
           <tbody>
             {members.map((m) => (
@@ -148,6 +162,18 @@ export default function MembersPanel({
                     {instrumentOptions}
                   </select>
                 </td>
+                <td>
+                  <input
+                    key={`${m.id}:${m.email ?? ''}`}
+                    type="email"
+                    className="email-input"
+                    defaultValue={m.email ?? ''}
+                    placeholder="No email"
+                    aria-label={`Email for ${m.name}`}
+                    onBlur={(e) => changeEmail(m, e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+                  />
+                </td>
                 <td className="right">
                   <button className="ghost danger small" onClick={() => remove(m)}>
                     {m.is_me ? 'Leave band' : 'Remove'}
@@ -157,6 +183,7 @@ export default function MembersPanel({
             ))}
           </tbody>
         </table>
+        </div>
       )}
     </section>
   );
