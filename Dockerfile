@@ -1,17 +1,30 @@
+# Node 22: better-sqlite3 ships prebuilt Linux binaries for it (none for Node 20).
+ARG NODE_VERSION=22
+
 # ---- Build the React client ----
-FROM node:20-slim AS client
+FROM node:${NODE_VERSION}-slim AS client
 WORKDIR /app/client
 COPY client/package*.json ./
 RUN npm ci
 COPY client/ ./
 RUN npm run build
 
-# ---- Server with production dependencies only ----
-FROM node:20-slim
+# ---- Install server dependencies ----
+# Compilers are only a fallback in case better-sqlite3 has no prebuilt binary for this
+# platform; they stay in this stage and never reach the final image.
+FROM node:${NODE_VERSION}-slim AS server-deps
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends python3 make g++ \
+  && rm -rf /var/lib/apt/lists/*
+WORKDIR /app/server
+COPY server/package*.json ./
+RUN npm ci --omit=dev
+
+# ---- Runtime ----
+FROM node:${NODE_VERSION}-slim
 ENV NODE_ENV=production
 WORKDIR /app
-COPY server/package*.json server/
-RUN npm --prefix server ci --omit=dev
+COPY --from=server-deps /app/server/node_modules server/node_modules
 COPY server/ server/
 COPY --from=client /app/client/dist client/dist
 
