@@ -18,6 +18,9 @@ const hasColumn = (table, column) =>
 if (!hasColumn('event_attendance', 'instrument_id')) {
   db.exec('ALTER TABLE event_attendance ADD COLUMN instrument_id INTEGER REFERENCES instruments(id) ON DELETE SET NULL');
 }
+if (!hasColumn('event_attendance', 'iffy_reason')) {
+  db.exec('ALTER TABLE event_attendance ADD COLUMN iffy_reason TEXT');
+}
 if (!hasColumn('band_members', 'user_id')) {
   db.exec('ALTER TABLE band_members ADD COLUMN user_id INTEGER REFERENCES users(id) ON DELETE SET NULL');
 }

@@ -44,8 +44,9 @@ export const api = {
   setEventStatus: (id, status) => request('PUT', `/events/${id}/status`, { status }),
   // Always RSVPs as the signed-in member.
   // instrumentId: undefined keeps the current choice; null means the member's primary instrument.
-  rsvp: (eventId, status, instrumentId) =>
-    request('PUT', `/events/${eventId}/rsvp`, { status, instrument_id: instrumentId }),
+  // iffyReason (Iffy only): undefined keeps the saved reason; '' clears it.
+  rsvp: (eventId, status, instrumentId, iffyReason) =>
+    request('PUT', `/events/${eventId}/rsvp`, { status, instrument_id: instrumentId, iffy_reason: iffyReason }),
 };
 
 export function formatDate(iso) {

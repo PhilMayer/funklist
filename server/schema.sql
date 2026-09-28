@@ -77,6 +77,8 @@ CREATE TABLE IF NOT EXISTS event_attendance (
   status      TEXT NOT NULL CHECK (status IN ('yes', 'no', 'iffy')),
   -- Instrument for this event only; NULL means the member's primary instrument.
   instrument_id  INTEGER REFERENCES instruments(id) ON DELETE SET NULL,
+  -- Optional reason given with an Iffy RSVP; cleared when the answer changes to yes/no.
+  iffy_reason    TEXT,
   updated_at  TEXT NOT NULL DEFAULT (datetime('now')),
   PRIMARY KEY (event_id, member_id)
 );

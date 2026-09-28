@@ -322,3 +322,26 @@ textarea { resize: vertical; }
   font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
   color: var(--yes); border: 1px solid currentColor;
 }
+
+/* Iffy reasons */
+.iffy-reason { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+.iffy-reason label { flex: 1; display: flex; align-items: center; gap: 0.5rem; min-width: 14rem; }
+.iffy-reason input { flex: 1; min-width: 0; padding: 0.4rem 0.6rem; font-size: 0.9rem; }
+.iffy-reason-label { color: var(--iffy); font-weight: 600; font-size: 0.9rem; white-space: nowrap; }
+.iffy-reason.compact { justify-content: flex-end; }
+.iffy-reason.compact label { flex: 0 1 24rem; }
+.iffy-reason.compact input { padding: 0.3rem 0.5rem; font-size: 0.85rem; }
+/* Names with a reason: dotted underline, and raised above the card's click layer so they can be hovered. */
+.has-reason {
+  position: relative; z-index: 1; cursor: help; border-radius: 3px;
+  text-decoration: underline dotted; text-decoration-thickness: 1px; text-underline-offset: 3px;
+}
+.has-reason:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.reason-tip {
+  position: fixed; z-index: 50; transform: translate(-50%, -100%);
+  width: max-content; max-width: min(18rem, calc(100vw - 16px));
+  padding: 0.45rem 0.65rem; border-radius: 8px; background: var(--text); color: var(--bg);
+  font-size: 0.82rem; font-style: normal; font-weight: 500; line-height: 1.35; text-align: left;
+  box-shadow: 0 4px 14px rgb(0 0 0 / 0.18); pointer-events: none; overflow-wrap: anywhere;
+}
+.reason-tip.below { transform: translate(-50%, 0); }

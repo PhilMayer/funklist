@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { api, formatDate, formatTime } from '../api';
 import { notifiedMessage } from '../messages';
+import IffyReasonInput from './IffyReasonInput';
+import ReasonTooltip from './ReasonTooltip';
 
 const RSVP_OPTIONS = [
   { value: 'yes', label: 'Yes' },
@@ -14,6 +16,7 @@ export default function EventDetail({ eventId, me, instruments, onBack, onEdit, 
   // Instrument picked before RSVPing, held until the first RSVP click. Keyed by member so
   // switching "I am" doesn't carry one person's choice over to another.
   const [pendingInstrument, setPendingInstrument] = useState({ memberId: null, value: '' });
+  const [justChoseIffy, setJustChoseIffy] = useState(false); // focus the reason box right after choosing Iffy
 
   useEffect(() => {
     api.event(eventId).then(setEvent).catch((e) => onError(e.message));
@@ -35,10 +38,19 @@ export default function EventDetail({ eventId, me, instruments, onBack, onEdit, 
     setSaving(true);
     try {
       setEvent(await api.rsvp(event.id, status, instrument ? Number(instrument) : null));
+      setJustChoseIffy(status === 'iffy' && myStatus !== 'iffy');
     } catch (e) {
       onError(e.message);
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function saveReason(text) {
+    try {
+      setEvent(await api.rsvp(event.id, 'iffy', undefined, text));
+    } catch (e) {
+      onError(e.message);
     }
   }
 
@@ -139,6 +151,14 @@ export default function EventDetail({ eventId, me, instruments, onBack, onEdit, 
                 </button>
               ))}
             </div>
+            {myStatus === 'iffy' && (
+              <IffyReasonInput
+                key={myResponse.iffy_reason ?? ''}
+                savedReason={myResponse.iffy_reason}
+                autoFocus={justChoseIffy}
+                onSave={saveReason}
+              />
+            )}
           </>
         ) : (
           <span className="muted">Loading…</span>
@@ -243,7 +263,9 @@ function ResponseList({ title, tone, people }) {
       <p>
         {people.map((p, i) => (
           <span key={p.id}>
-            {p.name}{p.instrument && <span className="muted"> ({p.instrument})</span>}
+            {p.iffy_reason ? <ReasonTooltip reason={p.iffy_reason}>{p.name}</ReasonTooltip> : p.name}
+            {p.iffy_reason && <span className="sr-only">, reason: {p.iffy_reason}</span>}
+            {p.instrument && <span className="muted"> ({p.instrument})</span>}
             {i < people.length - 1 && ', '}
           </span>
         ))}

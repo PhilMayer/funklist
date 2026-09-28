@@ -25,6 +25,7 @@ app.use('/api', auth.requireUser);
 
 const EVENT_TYPES = ['rehearsal', 'gig'];
 const RSVP_STATUSES = ['yes', 'no', 'iffy'];
+const MAX_IFFY_REASON = 200;
 // Statuses a member can set from the Event page (new events start 'unconfirmed').
 const SETTABLE_EVENT_STATUSES = ['confirmed', 'cancelled'];
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -259,7 +260,8 @@ app.get('/api/bands/:bandId/events', (req, res) => {
            SUM(a.status = 'yes')  AS yes_count,
            SUM(a.status = 'iffy') AS iffy_count,
            SUM(a.status = 'no')   AS no_count,
-           MAX(CASE WHEN a.member_id = @memberId THEN a.status END) AS my_status
+           MAX(CASE WHEN a.member_id = @memberId THEN a.status END) AS my_status,
+           MAX(CASE WHEN a.member_id = @memberId THEN a.iffy_reason END) AS my_iffy_reason
     FROM events e
     LEFT JOIN event_details d ON d.event_id = e.id
     LEFT JOIN event_attendance a ON a.event_id = e.id
@@ -271,7 +273,7 @@ app.get('/api/bands/:bandId/events', (req, res) => {
   // Every band member for every listed event, with their response (null = hasn't responded),
   // grouped by the instrument they're playing. Within an instrument: yes, iffy, no response, no.
   const attendance = db.prepare(`
-    SELECT e.id AS event_id, a.status, m.id, m.name, i.name AS instrument
+    SELECT e.id AS event_id, a.status, a.iffy_reason, m.id, m.name, i.name AS instrument
     FROM events e
     JOIN band_members m ON m.band_id = e.band_id
     LEFT JOIN event_attendance a ON a.event_id = e.id AND a.member_id = m.id
@@ -281,9 +283,9 @@ app.get('/api/bands/:bandId/events', (req, res) => {
              CASE a.status WHEN 'yes' THEN 0 WHEN 'iffy' THEN 1 WHEN 'no' THEN 3 ELSE 2 END, m.name
   `).all(me.band_id);
   const byEvent = new Map();
-  for (const { event_id, status, id, name, instrument } of attendance) {
+  for (const { event_id, status, iffy_reason, id, name, instrument } of attendance) {
     if (!byEvent.has(event_id)) byEvent.set(event_id, []);
-    byEvent.get(event_id).push({ id, name, instrument, status });
+    byEvent.get(event_id).push({ id, name, instrument, status, iffy_reason });
   }
 
   res.json(rows.map((r) => ({
@@ -312,7 +314,7 @@ function getEvent(eventId) {
   if (!event) throw new HttpError(404, 'Event not found');
 
   const members = db.prepare(`
-    SELECT m.id, m.name, i.name AS instrument, i.sort_order, a.status, a.updated_at,
+    SELECT m.id, m.name, i.name AS instrument, i.sort_order, a.status, a.iffy_reason, a.updated_at,
            a.instrument_id AS event_instrument_id, p.name AS primary_instrument
     FROM band_members m
     LEFT JOIN event_attendance a ON a.member_id = m.id AND a.event_id = ?
@@ -345,11 +347,14 @@ function getEvent(eventId) {
     quorum: quorumFor(members),
     attendance: {
       going_by_instrument: goingByInstrument,
-      iffy: pick((m) => m.status === 'iffy'),
+      iffy: members.filter((m) => m.status === 'iffy')
+        .map(({ id, name, instrument, iffy_reason }) => ({ id, name, instrument, iffy_reason })),
       no: pick((m) => m.status === 'no'),
       no_response: pick((m) => !m.status),
       responses: Object.fromEntries(
-        members.filter((m) => m.status).map((m) => [m.id, { status: m.status, instrument_id: m.event_instrument_id }])
+        members.filter((m) => m.status).map((m) => [
+          m.id, { status: m.status, instrument_id: m.event_instrument_id, iffy_reason: m.iffy_reason },
+        ])
       ),
     },
   };
@@ -455,14 +460,30 @@ app.put('/api/events/:eventId/rsvp', (req, res) => {
   if (instrumentId) findOr404('SELECT id FROM instruments WHERE id = ?', instrumentId, 'Instrument');
   if (instrumentId === member.instrument_id) instrumentId = null;
 
+  // iffy_reason (Iffy only): omitted keeps the existing reason; empty/null clears it.
+  // Answering yes or no always clears it.
+  const setReason = 'iffy_reason' in req.body;
+  const rawReason = req.body.iffy_reason;
+  if (setReason && rawReason != null && typeof rawReason !== 'string') throw new HttpError(400, 'Reason must be text');
+  const reason = setReason ? clean(rawReason) : null;
+  if (reason && reason.length > MAX_IFFY_REASON) {
+    throw new HttpError(400, `Keep the reason to ${MAX_IFFY_REASON} characters or fewer`);
+  }
+
   db.prepare(`
-    INSERT INTO event_attendance (event_id, member_id, status, instrument_id, updated_at)
-    VALUES (@eventId, @memberId, @status, @instrumentId, datetime('now'))
+    INSERT INTO event_attendance (event_id, member_id, status, instrument_id, iffy_reason, updated_at)
+    VALUES (@eventId, @memberId, @status, @instrumentId, CASE WHEN @status = 'iffy' THEN @reason END, datetime('now'))
     ON CONFLICT(event_id, member_id) DO UPDATE SET
       status = excluded.status,
       instrument_id = CASE WHEN @setInstrument THEN excluded.instrument_id ELSE instrument_id END,
+      iffy_reason = CASE WHEN excluded.status != 'iffy' THEN NULL
+                         WHEN @setReason THEN @reason
+                         ELSE iffy_reason END,
       updated_at = excluded.updated_at
-  `).run({ eventId: event.id, memberId, status, instrumentId, setInstrument: setInstrument ? 1 : 0 });
+  `).run({
+    eventId: event.id, memberId, status, instrumentId, reason,
+    setInstrument: setInstrument ? 1 : 0, setReason: setReason ? 1 : 0,
+  });
   res.json(getEvent(event.id));
 });
 
@@ -480,6 +501,9 @@ if (fs.existsSync(CLIENT_DIST)) {
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, next) => {
   if (err instanceof HttpError) return res.status(err.status).json({ error: err.message });
+  // Bad request bodies rejected by express.json() are client errors, not server errors.
+  if (err.type === 'entity.parse.failed') return res.status(400).json({ error: 'Request body is not valid JSON' });
+  if (err.type === 'entity.too.large') return res.status(413).json({ error: 'Request body is too large' });
   console.error(err);
   res.status(500).json({ error: 'Internal server error' });
 });

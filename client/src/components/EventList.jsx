@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api, formatDate, formatTime } from '../api';
+import IffyReasonInput from './IffyReasonInput';
+import ReasonTooltip from './ReasonTooltip';
 
 export default function EventList({ bandId, me, onOpen, onNew, onError }) {
   const [when, setWhen] = useState('upcoming');
   const [events, setEvents] = useState(null);
   const [savingId, setSavingId] = useState(null);
+  const [justIffyId, setJustIffyId] = useState(null); // focus that card's reason box after choosing Iffy
 
   const refresh = useCallback(
     () => api.events(bandId, when).then(setEvents).catch((e) => onError(e.message)),
@@ -22,10 +25,20 @@ export default function EventList({ bandId, me, onOpen, onNew, onError }) {
       // No instrument sent, so any per-event instrument choice made on the Event page is kept.
       await api.rsvp(eventId, status);
       await refresh();
+      setJustIffyId(status === 'iffy' ? eventId : null);
     } catch (e) {
       onError(e.message);
     } finally {
       setSavingId(null);
+    }
+  }
+
+  async function saveReason(eventId, text) {
+    try {
+      await api.rsvp(eventId, 'iffy', undefined, text);
+      await refresh();
+    } catch (e) {
+      onError(e.message);
     }
   }
 
@@ -84,12 +97,14 @@ export default function EventList({ bandId, me, onOpen, onNew, onError }) {
                             <li
                               key={m.id}
                               className={`${m.status || 'pending'} ${me?.id === m.id ? 'me' : ''}`}
-                              title={`${m.name}: ${STATUS_LABELS[m.status || 'pending']}`}
+                              title={m.iffy_reason ? undefined : `${m.name}: ${STATUS_LABELS[m.status || 'pending']}`}
                             >
-                              {m.name}
+                              {m.iffy_reason ? <ReasonTooltip reason={m.iffy_reason}>{m.name}</ReasonTooltip> : m.name}
                               {m.status === 'iffy' && <span className="iffy-mark" aria-hidden="true"> ?</span>}
                               {m.status !== 'yes' && (
-                                <span className="sr-only"> ({STATUS_LABELS[m.status || 'pending']})</span>
+                                <span className="sr-only">
+                                  {' '}({STATUS_LABELS[m.status || 'pending']}{m.iffy_reason && `: ${m.iffy_reason}`})
+                                </span>
                               )}
                             </li>
                           ))}
@@ -116,6 +131,15 @@ export default function EventList({ bandId, me, onOpen, onNew, onError }) {
                       </button>
                     ))}
                   </div>
+                  {e.my_status === 'iffy' && (
+                    <IffyReasonInput
+                      compact
+                      key={e.my_iffy_reason ?? ''}
+                      savedReason={e.my_iffy_reason}
+                      autoFocus={justIffyId === e.id}
+                      onSave={(text) => saveReason(e.id, text)}
+                    />
+                  )}
                 </div>
               )}
             </li>
