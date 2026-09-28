@@ -1,0 +1,9 @@
+**/node_modules
+client/dist
+server/*.db
+server/*.db-shm
+server/*.db-wal
+server/.env
+.git
+.claude
+.DS_Store

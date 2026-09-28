@@ -1,0 +1,25 @@
+# Fly.io config. `fly launch --no-deploy` will fill in the app name and region.
+app = "funklist"
+primary_region = "ord"
+
+[build]
+
+[env]
+  NODE_ENV = "production"
+  TRUST_PROXY = "1"
+
+# SQLite needs a persistent disk. Keep exactly one machine; SQLite can't be shared across machines.
+[mounts]
+  source = "funklist_data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"
