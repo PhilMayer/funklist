@@ -12,6 +12,8 @@ primary_region = 'ord'
   NODE_ENV = 'production'
   TRUST_PROXY = '1'
   APP_URL = 'https://funklist.fly.dev'
+  # Time zone for bands that don't have one yet (the server's clock is UTC).
+  DEFAULT_TIMEZONE = 'America/New_York'
 
 [[mounts]]
   source = 'funklist_data'

@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const Database = require('better-sqlite3');
+const { DEFAULT_TIMEZONE } = require('./time');
 
 const DB_PATH = process.env.DB_PATH || path.join(__dirname, 'funklist.db');
 
@@ -27,6 +28,11 @@ if (!hasColumn('band_members', 'user_id')) {
 if (!hasColumn('bands', 'invite_code')) {
   db.exec('ALTER TABLE bands ADD COLUMN invite_code TEXT');
 }
+if (!hasColumn('bands', 'timezone')) {
+  db.exec('ALTER TABLE bands ADD COLUMN timezone TEXT');
+}
+// Bands created before time zones existed get the server default (DEFAULT_TIMEZONE).
+db.prepare('UPDATE bands SET timezone = ? WHERE timezone IS NULL').run(DEFAULT_TIMEZONE);
 if (!hasColumn('events', 'status')) {
   db.exec(`
     ALTER TABLE events ADD COLUMN status TEXT NOT NULL DEFAULT 'unconfirmed'
