@@ -352,3 +352,36 @@ textarea { resize: vertical; }
 .band-setting select { max-width: 100%; }
 .band-setting p { margin-top: 0.35rem; }
 .saved-note { color: var(--yes); font-size: 0.85rem; font-weight: 600; }
+
+/* Calendar */
+a.button {
+  display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.5rem 0.9rem; border-radius: 8px;
+  border: 1px solid transparent; text-decoration: none; font-weight: 600;
+}
+a.button.primary { background: var(--accent); color: var(--accent-contrast); }
+a.button.ghost { border-color: var(--border); background: var(--surface); color: var(--text); }
+.section-head-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 0.5rem; }
+.section-head-actions .ghost, .menu > .ghost { display: inline-flex; align-items: center; gap: 0.35rem; }
+.icon { flex-shrink: 0; }
+.calendar-sync { display: grid; gap: 0.75rem; margin-bottom: 1rem; }
+.calendar-sync-head { display: flex; justify-content: space-between; align-items: center; }
+.calendar-sync-head h2 { margin: 0; }
+.calendar-sync p { margin: 0; }
+.calendar-sync-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+button.link.close { margin: 0; color: var(--muted); font-size: 1rem; padding: 0.25rem 0.4rem; }
+button.link.inline { margin: 0; font-size: inherit; text-decoration: underline; }
+.menu { position: relative; }
+.menu-list {
+  position: absolute; right: 0; top: calc(100% + 4px); z-index: 20; min-width: 15rem;
+  display: grid; padding: 0.3rem; border-radius: 10px; background: var(--surface); border: 1px solid var(--border);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.14);
+}
+.menu-list a {
+  padding: 0.5rem 0.7rem; border-radius: 6px; color: var(--text); text-decoration: none; font-size: 0.92rem;
+  white-space: nowrap;
+}
+.menu-list a:hover, .menu-list a:focus-visible { background: var(--bg); outline: none; }
+@media (max-width: 700px) {
+  .section-head { flex-wrap: wrap; }
+  .menu-list { right: auto; left: 0; }
+}

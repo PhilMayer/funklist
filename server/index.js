@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 
@@ -13,6 +14,7 @@ const { quorumFor } = require('./quorum');
 const { notifyBand } = require('./notify');
 const { emailEnabled } = require('./mailer');
 const { isValidTimeZone, DEFAULT_TIMEZONE, todayIn } = require('./time');
+const { buildCalendar, eventTimes } = require('./calendar');
 
 const app = express();
 // Behind a hosting proxy (e.g. Fly.io), trust its X-Forwarded-For so req.ip is the real client
@@ -21,8 +23,67 @@ if (process.env.TRUST_PROXY) app.set('trust proxy', Number(process.env.TRUST_PRO
 app.use(express.json());
 app.use(auth.loadUser);
 app.use('/api/auth', auth.router);
+
+// ---------- Calendar feed (public; the URL's secret token identifies the user) ----------
+
+// Columns buildCalendar needs, for events joined with their band, details, and one member's RSVP.
+const CALENDAR_EVENT_COLUMNS = `
+  e.id, e.type, e.title, e.event_date, e.status, d.call_time, d.hit_time, d.venue, d.description, d.set_list,
+  b.name AS band_name, b.timezone, a.status AS rsvp, a.iffy_reason`;
+
+// Subscribed by Google/Apple/Outlook Calendar, which can't sign in. Covers every band the user is
+// in, from a year ago on; cancelled events are left out so they drop off calendars.
+app.get('/calendar/:file', (req, res) => {
+  const match = /^([A-Za-z0-9_-]{20,})\.ics$/.exec(req.params.file);
+  const user = match && db.prepare('SELECT id FROM users WHERE calendar_token = ?').get(match[1]);
+  if (!user) return res.status(404).type('text/plain').send('Calendar not found. The link may have been reset.');
+  const events = db.prepare(`
+    SELECT ${CALENDAR_EVENT_COLUMNS}
+    FROM events e
+    JOIN bands b ON b.id = e.band_id
+    JOIN band_members m ON m.band_id = e.band_id AND m.user_id = ?
+    LEFT JOIN event_details d ON d.event_id = e.id
+    LEFT JOIN event_attendance a ON a.event_id = e.id AND a.member_id = m.id
+    WHERE e.status != 'cancelled' AND e.event_date >= date('now', '-1 year')
+    ORDER BY e.event_date, d.call_time
+  `).all(user.id);
+  res.type('text/calendar; charset=utf-8')
+    .set('Cache-Control', 'private, max-age=300')
+    .send(buildCalendar({ name: 'Funklist', events, appUrl: appUrl(req), includeRsvp: true }));
+});
+
 // Everything else under /api requires a signed-in user.
 app.use('/api', auth.requireUser);
+
+// ---------- Your calendar subscription link ----------
+
+const newCalendarToken = () => crypto.randomBytes(24).toString('base64url');
+
+function calendarLinks(req, token) {
+  const url = `${appUrl(req)}/calendar/${token}.ics`;
+  const webcal = url.replace(/^https?:/, 'webcal:');
+  return {
+    url, // paste into any calendar app's "subscribe by URL"
+    webcal_url: webcal, // opens Apple Calendar / Outlook directly
+    google_url: `https://calendar.google.com/calendar/render?cid=${encodeURIComponent(webcal)}`,
+  };
+}
+
+app.get('/api/me/calendar', (req, res) => {
+  let { calendar_token: token } = db.prepare('SELECT calendar_token FROM users WHERE id = ?').get(req.user.id);
+  if (!token) {
+    token = newCalendarToken();
+    db.prepare('UPDATE users SET calendar_token = ? WHERE id = ?').run(token, req.user.id);
+  }
+  res.json(calendarLinks(req, token));
+});
+
+// New secret, so previously shared or leaked links stop working.
+app.post('/api/me/calendar/reset', (req, res) => {
+  const token = newCalendarToken();
+  db.prepare('UPDATE users SET calendar_token = ? WHERE id = ?').run(token, req.user.id);
+  res.json(calendarLinks(req, token));
+});
 
 const EVENT_TYPES = ['rehearsal', 'gig'];
 const RSVP_STATUSES = ['yes', 'no', 'iffy'];
@@ -320,8 +381,10 @@ app.get('/api/bands/:bandId/events', (req, res) => {
 function getEvent(eventId) {
   const event = db.prepare(`
     SELECT e.*, d.venue, d.call_time, d.hit_time, d.set_list, d.description,
-           c.name AS created_by_name, su.name AS status_updated_by_name
+           c.name AS created_by_name, su.name AS status_updated_by_name,
+           b.name AS band_name, b.timezone AS band_timezone
     FROM events e
+    JOIN bands b ON b.id = e.band_id
     LEFT JOIN event_details d ON d.event_id = e.id
     LEFT JOIN band_members c ON c.id = e.created_by
     LEFT JOIN band_members su ON su.id = e.status_updated_by
@@ -360,6 +423,8 @@ function getEvent(eventId) {
 
   return {
     ...event,
+    // Start/end for "Add to calendar" (UTC, or dates for all-day events).
+    calendar: eventTimes(event, event.band_timezone),
     quorum: quorumFor(members),
     attendance: {
       going_by_instrument: goingByInstrument,
@@ -379,6 +444,23 @@ function getEvent(eventId) {
 app.get('/api/events/:eventId', (req, res) => {
   const { event } = requireEventMember(req, req.params.eventId);
   res.json(getEvent(event.id));
+});
+
+// "Add to calendar" download for Apple Calendar / Outlook (a one-time copy; it won't update).
+app.get('/api/events/:eventId/calendar.ics', (req, res) => {
+  const { event, member } = requireEventMember(req, req.params.eventId);
+  const row = db.prepare(`
+    SELECT ${CALENDAR_EVENT_COLUMNS}
+    FROM events e
+    JOIN bands b ON b.id = e.band_id
+    LEFT JOIN event_details d ON d.event_id = e.id
+    LEFT JOIN event_attendance a ON a.event_id = e.id AND a.member_id = ?
+    WHERE e.id = ?
+  `).get(member.id, event.id);
+  const filename = row.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'event';
+  res.type('text/calendar; charset=utf-8')
+    .attachment(`${filename}.ics`)
+    .send(buildCalendar({ name: row.title, events: [row], appUrl: appUrl(req), includeRsvp: true }));
 });
 
 const createEvent = db.transaction((bandId, createdBy, e) => {

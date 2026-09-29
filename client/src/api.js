@@ -32,6 +32,10 @@ export const api = {
   }),
   band: (id) => request('GET', `/bands/${id}`),
   updateBand: (id, fields) => request('PUT', `/bands/${id}`, fields),
+
+  // Personal calendar subscription links ({ url, webcal_url, google_url }).
+  calendarLinks: () => request('GET', '/me/calendar'),
+  resetCalendarLinks: () => request('POST', '/me/calendar/reset'),
   newInviteCode: (bandId) => request('POST', `/bands/${bandId}/invite`),
   invite: (code) => request('GET', `/invites/${encodeURIComponent(code)}`),
   joinBand: (code, choice) => request('POST', `/invites/${encodeURIComponent(code)}/join`, choice),
