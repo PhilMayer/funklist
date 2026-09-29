@@ -1,4 +1,5 @@
 # Funklist
+https://funklist.fly.dev/
 
 Rehearsal and gig attendance for bands. Built with Node.js (Express), SQLite (`better-sqlite3`), and React (Vite).
 
