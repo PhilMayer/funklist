@@ -28,6 +28,9 @@ if (!hasColumn('band_members', 'user_id')) {
 if (!hasColumn('bands', 'invite_code')) {
   db.exec('ALTER TABLE bands ADD COLUMN invite_code TEXT');
 }
+if (!hasColumn('users', 'calendar_token')) {
+  db.exec('ALTER TABLE users ADD COLUMN calendar_token TEXT');
+}
 if (!hasColumn('bands', 'timezone')) {
   db.exec('ALTER TABLE bands ADD COLUMN timezone TEXT');
 }
@@ -45,6 +48,7 @@ if (!hasColumn('events', 'status')) {
 db.exec(`
   CREATE UNIQUE INDEX IF NOT EXISTS idx_members_band_user ON band_members(band_id, user_id) WHERE user_id IS NOT NULL;
   CREATE UNIQUE INDEX IF NOT EXISTS idx_bands_invite ON bands(invite_code);
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_users_calendar_token ON users(calendar_token);
 `);
 const setInvite = db.prepare('UPDATE bands SET invite_code = ? WHERE id = ?');
 for (const { id } of db.prepare('SELECT id FROM bands WHERE invite_code IS NULL').all()) {

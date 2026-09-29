@@ -3,6 +3,7 @@ import { api, formatDate, formatTime } from '../api';
 import { notifiedMessage } from '../messages';
 import IffyReasonInput from './IffyReasonInput';
 import ReasonTooltip from './ReasonTooltip';
+import AddToCalendar from './AddToCalendar';
 
 const RSVP_OPTIONS = [
   { value: 'yes', label: 'Yes' },
@@ -107,6 +108,7 @@ export default function EventDetail({ eventId, me, instruments, onBack, onEdit, 
         </div>
         {me && (
           <div className="detail-actions">
+            {event.status !== 'cancelled' && <AddToCalendar event={event} />}
             <button className="ghost" onClick={() => onEdit(event)}>Edit</button>
             <button className="ghost danger" onClick={handleDelete}>Delete</button>
           </div>

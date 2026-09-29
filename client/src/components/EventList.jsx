@@ -2,12 +2,14 @@ import { useCallback, useEffect, useState } from 'react';
 import { api, formatDate, formatTime } from '../api';
 import IffyReasonInput from './IffyReasonInput';
 import ReasonTooltip from './ReasonTooltip';
+import CalendarSync from './CalendarSync';
 
 export default function EventList({ bandId, me, onOpen, onNew, onError }) {
   const [when, setWhen] = useState('upcoming');
   const [events, setEvents] = useState(null);
   const [savingId, setSavingId] = useState(null);
   const [justIffyId, setJustIffyId] = useState(null); // focus that card's reason box after choosing Iffy
+  const [showSync, setShowSync] = useState(false);
 
   const refresh = useCallback(
     () => api.events(bandId, when).then(setEvents).catch((e) => onError(e.message)),
@@ -49,8 +51,15 @@ export default function EventList({ bandId, me, onOpen, onNew, onError }) {
           <button className={when === 'upcoming' ? 'active' : ''} onClick={() => setWhen('upcoming')}>Upcoming</button>
           <button className={when === 'past' ? 'active' : ''} onClick={() => setWhen('past')}>Past</button>
         </div>
-        <button className="primary" onClick={onNew}>+ New event</button>
+        <div className="section-head-actions">
+          <button className="ghost" aria-expanded={showSync} onClick={() => setShowSync((s) => !s)}>
+            <CalendarIcon /> Calendar sync
+          </button>
+          <button className="primary" onClick={onNew}>+ New event</button>
+        </div>
       </div>
+
+      {showSync && <CalendarSync onClose={() => setShowSync(false)} onError={onError} />}
 
       {events?.length > 0 && (
         <div className="legend" aria-hidden="true">
@@ -149,6 +158,13 @@ export default function EventList({ bandId, me, onOpen, onNew, onError }) {
     </section>
   );
 }
+
+const CalendarIcon = () => (
+  <svg className="icon" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+    <rect x="1.5" y="2.5" width="13" height="12" rx="2" fill="none" stroke="currentColor" strokeWidth="1.5" />
+    <path d="M1.5 6.5h13M5 1v3M11 1v3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+  </svg>
+);
 
 const STATUS_LABELS = { yes: 'Yes', iffy: 'Iffy', no: 'Not going', pending: 'No response' };
 

@@ -110,16 +110,19 @@ function SignedInApp({ user, joinCode, onDoneJoining, onSignOut }) {
     if (url.href !== window.location.href) window.history.replaceState(null, '', url);
   }, [view]);
 
+  // Only load members for a band the user is actually in. The remembered band can be stale
+  // (left the band, or someone else used this browser) until the band list has loaded.
+  const bandReady = Boolean(bands?.some((b) => b.id === bandId));
   const refreshMembers = useCallback(() => {
-    if (!bandId) return setMembers([]);
+    if (!bandReady) return setMembers([]);
     api.members(bandId).then(setMembers).catch((e) => setError(e.message));
-  }, [bandId]);
+  }, [bandId, bandReady]);
 
   useEffect(() => {
-    save('funklist.bandId', bandId);
+    if (bandReady) save('funklist.bandId', bandId);
     setMembers([]);
     refreshMembers();
-  }, [bandId, refreshMembers]);
+  }, [bandId, bandReady, refreshMembers]);
 
   const me = members.find((m) => m.is_me) || null;
 

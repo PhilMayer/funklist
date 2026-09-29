@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS users (
   google_sub     TEXT UNIQUE,                 -- Google's stable account id
   email          TEXT,
   display_name   TEXT NOT NULL,
+  calendar_token TEXT,                        -- secret in the calendar feed URL; unique index in db.js
   created_at     TEXT NOT NULL DEFAULT (datetime('now')),
   CHECK (username IS NOT NULL OR google_sub IS NOT NULL)
 );
