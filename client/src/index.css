@@ -345,3 +345,10 @@ textarea { resize: vertical; }
   box-shadow: 0 4px 14px rgb(0 0 0 / 0.18); pointer-events: none; overflow-wrap: anywhere;
 }
 .reason-tip.below { transform: translate(-50%, 0); }
+
+/* Band settings */
+.band-setting { margin: -0.5rem 0 1.25rem; padding: 0 0.1rem; }
+.band-setting label { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.75rem; }
+.band-setting select { max-width: 100%; }
+.band-setting p { margin-top: 0.35rem; }
+.saved-note { color: var(--yes); font-size: 0.85rem; font-weight: 600; }

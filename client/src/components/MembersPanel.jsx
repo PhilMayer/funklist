@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api';
+import TimeZoneSetting from './TimeZoneSetting';
 
 const NEW_INSTRUMENT = '__new__';
 
@@ -10,10 +11,16 @@ export default function MembersPanel({
   const [instrumentId, setInstrumentId] = useState('');
   const [email, setEmail] = useState('');
   const [inviteCode, setInviteCode] = useState(null);
+  const [timezone, setTimezone] = useState(null);
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
-    api.band(bandId).then((b) => setInviteCode(b.invite_code)).catch((e) => onError(e.message));
+    api.band(bandId)
+      .then((b) => {
+        setInviteCode(b.invite_code);
+        setTimezone(b.timezone);
+      })
+      .catch((e) => onError(e.message));
   }, [bandId, onError]);
 
   const inviteLink = inviteCode && `${window.location.origin}/?join=${inviteCode}`;
@@ -123,6 +130,8 @@ export default function MembersPanel({
           </button>
         </div>
       </div>
+
+      <TimeZoneSetting bandId={bandId} timezone={timezone} onSaved={setTimezone} onError={onError} />
 
       <p className="muted small-text add-member-hint">
         Add someone who isn’t on Funklist yet (like a sub). They can claim the profile later through the invite link.

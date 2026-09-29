@@ -12,6 +12,7 @@ const auth = require('./auth');
 const { quorumFor } = require('./quorum');
 const { notifyBand } = require('./notify');
 const { emailEnabled } = require('./mailer');
+const { isValidTimeZone, DEFAULT_TIMEZONE, todayIn } = require('./time');
 
 const app = express();
 // Behind a hosting proxy (e.g. Fly.io), trust its X-Forwarded-For so req.ip is the real client
@@ -95,8 +96,11 @@ app.post('/api/bands', (req, res) => {
   const name = clean(req.body.name);
   if (!name) throw new HttpError(400, 'Band name is required');
   const instrumentId = validInstrumentId(req.body.instrument_id);
+  // The app sends the creator's browser time zone.
+  const timezone = isValidTimeZone(req.body.timezone) ? req.body.timezone : DEFAULT_TIMEZONE;
   const bandId = db.transaction(() => {
-    const id = db.prepare('INSERT INTO bands (name, invite_code) VALUES (?, ?)').run(name, newInviteCode()).lastInsertRowid;
+    const id = db.prepare('INSERT INTO bands (name, invite_code, timezone) VALUES (?, ?, ?)')
+      .run(name, newInviteCode(), timezone).lastInsertRowid;
     db.prepare('INSERT INTO band_members (band_id, name, email, instrument_id, user_id) VALUES (?, ?, ?, ?, ?)')
       .run(id, req.user.display_name, req.user.email, instrumentId, req.user.id);
     return id;
@@ -109,7 +113,16 @@ app.post('/api/bands', (req, res) => {
 
 app.get('/api/bands/:bandId', (req, res) => {
   const member = requireMember(req, req.params.bandId);
-  const band = db.prepare('SELECT id, name, invite_code FROM bands WHERE id = ?').get(member.band_id);
+  const band = db.prepare('SELECT id, name, invite_code, timezone FROM bands WHERE id = ?').get(member.band_id);
+  res.json({ ...band, member_id: member.id });
+});
+
+// Band settings. Currently just the time zone, which decides when events move from Upcoming to Past.
+app.put('/api/bands/:bandId', (req, res) => {
+  const member = requireMember(req, req.params.bandId);
+  if (!isValidTimeZone(req.body.timezone)) throw new HttpError(400, 'Choose a valid time zone');
+  db.prepare('UPDATE bands SET timezone = ? WHERE id = ?').run(req.body.timezone, member.band_id);
+  const band = db.prepare('SELECT id, name, invite_code, timezone FROM bands WHERE id = ?').get(member.band_id);
   res.json({ ...band, member_id: member.id });
 });
 
@@ -251,10 +264,13 @@ function validateEvent(body) {
 app.get('/api/bands/:bandId/events', (req, res) => {
   const me = requireMember(req, req.params.bandId);
   const when = req.query.when === 'past' ? 'past' : 'upcoming';
+  // Events stay in Upcoming through their whole day in the band's time zone. (The server's own
+  // clock is UTC on Fly, which would move evening events to Past before they happen.)
+  const { timezone } = db.prepare('SELECT timezone FROM bands WHERE id = ?').get(me.band_id);
+  const today = todayIn(timezone || DEFAULT_TIMEZONE);
   // Cancelled events are left off the list (they stay reachable by link).
-  const dateFilter = (when === 'past'
-    ? "e.event_date < date('now', 'localtime')"
-    : "e.event_date >= date('now', 'localtime')") + " AND e.status != 'cancelled'";
+  const dateFilter = (when === 'past' ? 'e.event_date < @today' : 'e.event_date >= @today')
+    + " AND e.status != 'cancelled'";
   const rows = db.prepare(`
     SELECT e.id, e.type, e.title, e.event_date, e.status, d.venue, d.call_time, d.hit_time,
            SUM(a.status = 'yes')  AS yes_count,
@@ -268,7 +284,7 @@ app.get('/api/bands/:bandId/events', (req, res) => {
     WHERE e.band_id = @bandId AND ${dateFilter}
     GROUP BY e.id
     ORDER BY e.event_date ${when === 'past' ? 'DESC' : 'ASC'}, d.call_time ASC
-  `).all({ bandId: me.band_id, memberId: me.id });
+  `).all({ bandId: me.band_id, memberId: me.id, today });
 
   // Every band member for every listed event, with their response (null = hasn't responded),
   // grouped by the instrument they're playing. Within an instrument: yes, iffy, no response, no.
@@ -278,10 +294,10 @@ app.get('/api/bands/:bandId/events', (req, res) => {
     JOIN band_members m ON m.band_id = e.band_id
     LEFT JOIN event_attendance a ON a.event_id = e.id AND a.member_id = m.id
     LEFT JOIN instruments i ON i.id = COALESCE(a.instrument_id, m.instrument_id)
-    WHERE e.band_id = ? AND ${dateFilter}
+    WHERE e.band_id = @bandId AND ${dateFilter}
     ORDER BY COALESCE(i.sort_order, 9999), i.name,
              CASE a.status WHEN 'yes' THEN 0 WHEN 'iffy' THEN 1 WHEN 'no' THEN 3 ELSE 2 END, m.name
-  `).all(me.band_id);
+  `).all({ bandId: me.band_id, today });
   const byEvent = new Map();
   for (const { event_id, status, iffy_reason, id, name, instrument } of attendance) {
     if (!byEvent.has(event_id)) byEvent.set(event_id, []);

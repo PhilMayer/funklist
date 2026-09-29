@@ -24,8 +24,14 @@ export const api = {
   addInstrument: (name) => request('POST', '/instruments', { name }),
 
   bands: () => request('GET', '/bands'),
-  createBand: (name, instrumentId) => request('POST', '/bands', { name, instrument_id: instrumentId || null }),
+  // New bands use the creator's browser time zone (changeable later on the Members tab).
+  createBand: (name, instrumentId) => request('POST', '/bands', {
+    name,
+    instrument_id: instrumentId || null,
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+  }),
   band: (id) => request('GET', `/bands/${id}`),
+  updateBand: (id, fields) => request('PUT', `/bands/${id}`, fields),
   newInviteCode: (bandId) => request('POST', `/bands/${bandId}/invite`),
   invite: (code) => request('GET', `/invites/${encodeURIComponent(code)}`),
   joinBand: (code, choice) => request('POST', `/invites/${encodeURIComponent(code)}/join`, choice),

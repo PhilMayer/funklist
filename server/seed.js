@@ -42,7 +42,8 @@ const isoDate = (daysFromNow) => {
 };
 
 db.transaction(() => {
-  const bandId = db.prepare('INSERT INTO bands (name, invite_code) VALUES (?, ?)').run(BAND, newInviteCode()).lastInsertRowid;
+  const bandId = db.prepare('INSERT INTO bands (name, invite_code, timezone) VALUES (?, ?, ?)')
+    .run(BAND, newInviteCode(), Intl.DateTimeFormat().resolvedOptions().timeZone).lastInsertRowid;
 
   const members = [
     ['Aretha', 'Vocals'], ['Bootsy', 'Tubas'], ['Clyde', 'Percussion'], ['Maceo', 'Saxophones'],

@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS bands (
   id           INTEGER PRIMARY KEY AUTOINCREMENT,
   name         TEXT NOT NULL,
   invite_code  TEXT,                         -- shared in the join link; unique index in db.js
+  timezone     TEXT,                         -- IANA name, e.g. America/New_York; see time.js
   created_at   TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
