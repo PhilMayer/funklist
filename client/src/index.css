@@ -385,3 +385,11 @@ button.link.inline { margin: 0; font-size: inherit; text-decoration: underline; 
   .section-head { flex-wrap: wrap; }
   .menu-list { right: auto; left: 0; }
 }
+
+/* Google Calendar: paste-the-link steps */
+.google-steps {
+  display: grid; gap: 0.35rem; padding: 0.75rem 0.9rem; border-radius: 8px;
+  background: var(--bg); border: 1px solid var(--border); font-size: 0.9rem;
+}
+.google-steps ol { margin: 0; padding-left: 1.25rem; display: grid; gap: 0.2rem; }
+.google-steps a { color: var(--accent); }

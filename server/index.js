@@ -36,6 +36,13 @@ const CALENDAR_EVENT_COLUMNS = `
 app.get('/calendar/:file', (req, res) => {
   const match = /^([A-Za-z0-9_-]{20,})\.ics$/.exec(req.params.file);
   const user = match && db.prepare('SELECT id FROM users WHERE calendar_token = ?').get(match[1]);
+  // One log line per fetch, so we can tell whether calendar apps are reaching the feed. Never log
+  // the URL: its token is the secret that grants access.
+  let eventCount = 0;
+  res.on('finish', () => {
+    const who = user ? `user ${user.id}, ${eventCount} events` : 'unknown or reset link';
+    console.log(`Calendar feed: ${res.statusCode} (${who}) via ${req.protocol}, agent "${req.get('user-agent') || '-'}"`);
+  });
   if (!user) return res.status(404).type('text/plain').send('Calendar not found. The link may have been reset.');
   const events = db.prepare(`
     SELECT ${CALENDAR_EVENT_COLUMNS}
@@ -47,6 +54,7 @@ app.get('/calendar/:file', (req, res) => {
     WHERE e.status != 'cancelled' AND e.event_date >= date('now', '-1 year')
     ORDER BY e.event_date, d.call_time
   `).all(user.id);
+  eventCount = events.length;
   res.type('text/calendar; charset=utf-8')
     .set('Cache-Control', 'private, max-age=300')
     .send(buildCalendar({ name: 'Funklist', events, appUrl: appUrl(req), includeRsvp: true }));
@@ -59,13 +67,14 @@ app.use('/api', auth.requireUser);
 
 const newCalendarToken = () => crypto.randomBytes(24).toString('base64url');
 
+// There's deliberately no Google Calendar subscribe link: Google only accepts webcal:// in its
+// ?cid= links, then fetches webcal:// over plain http://, which this HTTPS-only site redirects,
+// leaving an empty calendar. Google users paste `url` into Google's "From URL" page instead.
 function calendarLinks(req, token) {
   const url = `${appUrl(req)}/calendar/${token}.ics`;
-  const webcal = url.replace(/^https?:/, 'webcal:');
   return {
-    url, // paste into any calendar app's "subscribe by URL"
-    webcal_url: webcal, // opens Apple Calendar / Outlook directly
-    google_url: `https://calendar.google.com/calendar/render?cid=${encodeURIComponent(webcal)}`,
+    url, // paste into any calendar app's "subscribe by URL" (incl. Google Calendar's "From URL")
+    webcal_url: url.replace(/^https?:/, 'webcal:'), // opens Apple Calendar / Outlook directly
   };
 }
 
