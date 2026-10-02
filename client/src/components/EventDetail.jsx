@@ -11,7 +11,7 @@ const RSVP_OPTIONS = [
   { value: 'no', label: 'No' },
 ];
 
-export default function EventDetail({ eventId, me, instruments, onBack, onEdit, onNotice, onError }) {
+export default function EventDetail({ eventId, me, instruments, onBack, onEdit, onDuplicate, onNotice, onError }) {
   const [event, setEvent] = useState(null);
   const [saving, setSaving] = useState(false);
   // Instrument picked before RSVPing, held until the first RSVP click. Keyed by member so
@@ -110,6 +110,7 @@ export default function EventDetail({ eventId, me, instruments, onBack, onEdit, 
           <div className="detail-actions">
             {event.status !== 'cancelled' && <AddToCalendar event={event} />}
             <button className="ghost" onClick={() => onEdit(event)}>Edit</button>
+            <button className="ghost" onClick={() => onDuplicate(event)}>Duplicate</button>
             <button className="ghost danger" onClick={handleDelete}>Delete</button>
           </div>
         )}
