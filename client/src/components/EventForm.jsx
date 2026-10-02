@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { api } from '../api';
+import { api, formatDate } from '../api';
 
 const EMPTY = {
   type: 'rehearsal',
@@ -12,12 +12,15 @@ const EMPTY = {
   description: '',
 };
 
-export default function EventForm({ bandId, initial, onCancel, onSaved }) {
-  const [form, setForm] = useState(() =>
-    initial
-      ? Object.fromEntries(Object.keys(EMPTY).map((k) => [k, initial[k] ?? '']))
-      : EMPTY
-  );
+// initial: the event being edited. template: an event being duplicated; its details are copied
+// into a new event, except the date (the copy needs its own) and anything RSVP-related.
+export default function EventForm({ bandId, initial, template, onCancel, onSaved }) {
+  const [form, setForm] = useState(() => {
+    const source = initial || template;
+    if (!source) return EMPTY;
+    const copy = Object.fromEntries(Object.keys(EMPTY).map((k) => [k, source[k] ?? '']));
+    return template ? { ...copy, event_date: '' } : copy;
+  });
   const [notify, setNotify] = useState(true); // new events only
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
@@ -41,7 +44,13 @@ export default function EventForm({ bandId, initial, onCancel, onSaved }) {
 
   return (
     <form className="card form" onSubmit={handleSubmit}>
-      <h1>{initial ? 'Edit event' : 'New event'}</h1>
+      <h1>{initial ? 'Edit event' : template ? 'Duplicate event' : 'New event'}</h1>
+      {template && (
+        <p className="muted">
+          Copied from “{template.title}” on {formatDate(template.event_date)}. Pick a date for the new event.
+          RSVPs and the confirmed/cancelled status aren’t copied.
+        </p>
+      )}
 
       <div className="field">
         <span className="label">Type</span>
@@ -67,7 +76,7 @@ export default function EventForm({ bandId, initial, onCancel, onSaved }) {
       <div className="row">
         <label className="field">
           <span className="label">Date *</span>
-          <input type="date" value={form.event_date} onChange={set('event_date')} required />
+          <input type="date" value={form.event_date} onChange={set('event_date')} required autoFocus={Boolean(template)} />
         </label>
         <label className="field">
           <span className="label">Call time</span>

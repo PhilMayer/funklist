@@ -183,7 +183,7 @@ input:focus, select:focus, textarea:focus, button:focus-visible { outline: 2px s
 .detail-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; margin-bottom: 1rem; }
 .detail-head h1 { margin-top: 0.5rem; }
 .detail-head .badge { min-width: 0; }
-.detail-actions { display: flex; gap: 0.5rem; }
+.detail-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 0.5rem; }
 .facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 0.75rem; margin: 0 0 1rem; }
 .facts div { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 0.7rem 0.9rem; }
 .facts dt { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
@@ -234,6 +234,9 @@ textarea { resize: vertical; }
 
 @media (max-width: 700px) {
   .grid { grid-template-columns: 1fr; }
+  /* Event page: title on its own line, action buttons wrap underneath it. */
+  .detail-head { flex-direction: column; align-items: stretch; }
+  .detail-actions { justify-content: flex-start; }
   .event-card-open { flex-wrap: wrap; row-gap: 0.5rem; }
   .quorum { flex-basis: 100%; flex-direction: row; flex-wrap: wrap; align-items: baseline; gap: 0.5rem; text-align: left; max-width: none; }
   .topbar { padding: 0.75rem 1rem; }

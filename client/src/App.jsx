@@ -67,7 +67,7 @@ function SignedInApp({ user, joinCode, onDoneJoining, onSignOut }) {
   const [bandId, setBandId] = useState(() => load('funklist.bandId'));
   const [members, setMembers] = useState([]);
   const [instruments, setInstruments] = useState([]);
-  // view: list | event {id} | new | edit {event} | members | create-band
+  // view: list | event {id} | new {template?} | edit {event} | members | create-band
   const [view, setView] = useState(() => {
     const eventId = readEventId();
     return eventId ? { name: 'event', id: eventId } : { name: 'list' };
@@ -191,6 +191,7 @@ function SignedInApp({ user, joinCode, onDoneJoining, onSignOut }) {
             instruments={instruments}
             onBack={() => setView({ name: 'list' })}
             onEdit={(event) => setView({ name: 'edit', event })}
+            onDuplicate={(event) => setView({ name: 'new', template: event })}
             onNotice={(text) => setNotice(text ? { eventId: view.id, text } : null)}
             onError={setError}
           />
@@ -199,7 +200,11 @@ function SignedInApp({ user, joinCode, onDoneJoining, onSignOut }) {
           <EventForm
             bandId={bandId}
             initial={view.event}
-            onCancel={() => setView(view.event ? { name: 'event', id: view.event.id } : { name: 'list' })}
+            template={view.template}
+            onCancel={() => {
+              const from = view.event || view.template; // back to the event being edited or copied
+              setView(from ? { name: 'event', id: from.id } : { name: 'list' });
+            }}
             onSaved={(event) => {
               setView({ name: 'event', id: event.id });
               const text = view.name === 'new' ? notifiedMessage(event) : '';
