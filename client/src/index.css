@@ -409,15 +409,16 @@ button.link.inline { margin: 0; font-size: inherit; text-decoration: underline; 
   text-transform: uppercase; letter-spacing: 0.05em; border-bottom: 2px solid var(--border);
 }
 .overview-table tbody tr:not(.month-row) { cursor: pointer; }
-.overview-table tbody tr:not(.month-row):hover { background: var(--bg); }
-.overview-table .badge { min-width: 0; }
+/* Whole row shaded by status; the label stays as text so it doesn't rely on color alone. */
+.overview-table tr.unconfirmed td { background: var(--iffy-bg); }
+.overview-table tr.confirmed td { background: var(--yes-bg); }
+.overview-table tr.cancelled td { background: var(--no-bg); }
+.overview-table tbody tr:not(.month-row):hover td { filter: brightness(0.96); }
+.overview-table td { border-bottom-color: var(--surface); }
 .overview-table tr.cancelled .title-link { text-decoration: line-through; color: var(--muted); }
 .overview-table tr.past td { opacity: 0.65; }
 .title-link { color: var(--text); text-decoration: none; text-align: left; }
-.status-pill { display: inline-block; padding: 0.1rem 0.5rem; border-radius: 999px; font-size: 0.75rem; font-weight: 700; white-space: nowrap; }
-.status-pill.pending { background: var(--iffy-bg); color: var(--iffy); }
-.status-pill.confirmed { background: var(--yes-bg); color: var(--yes); }
-.status-pill.cancelled { background: var(--no-bg); color: var(--no); }
-@media (max-width: 700px) {
-  .overview-table .col-type { display: none; } /* keep Date, Event, and Status visible on phones */
-}
+.status-pill { font-size: 0.8rem; font-weight: 700; white-space: nowrap; }
+.status-pill.pending { color: var(--iffy); }
+.status-pill.confirmed { color: var(--yes); }
+.status-pill.cancelled { color: var(--no); }

@@ -54,11 +54,11 @@ export default function EventsOverview({ bandId, refreshKey, onOpen, onError }) 
         <div className="table-wrap">
           <table className="overview-table">
             <thead>
-              <tr><th>Date</th><th>Event</th><th className="col-type">Type</th><th>Status</th></tr>
+              <tr><th>Date</th><th>Event</th><th>Status</th></tr>
             </thead>
             {shown.map((m) => (
               <tbody key={m.ym}>
-                <tr className="month-row"><th colSpan={4} scope="colgroup">{monthLabel(m.ym)}</th></tr>
+                <tr className="month-row"><th colSpan={3} scope="colgroup">{monthLabel(m.ym)}</th></tr>
                 {m.events.map((e) => (
                   <tr
                     key={e.id}
@@ -71,8 +71,7 @@ export default function EventsOverview({ bandId, refreshKey, onOpen, onError }) 
                         {e.title}
                       </button>
                     </td>
-                    <td className="col-type"><span className={`badge ${e.type}`}>{e.type}</span></td>
-                    <td><span className={`status-pill ${STATUS[e.status].className}`}>{STATUS[e.status].label}</span></td>
+                                        <td><span className={`status-pill ${STATUS[e.status].className}`}>{STATUS[e.status].label}</span></td>
                   </tr>
                 ))}
               </tbody>
