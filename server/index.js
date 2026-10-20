@@ -329,6 +329,20 @@ function validateEvent(body) {
   };
 }
 
+// Compact overview of every event in the band, cancelled ones included, oldest first. `today` is
+// the band's local date so the app can tell past months from upcoming ones.
+app.get('/api/bands/:bandId/events/overview', (req, res) => {
+  const me = requireMember(req, req.params.bandId);
+  const { timezone } = db.prepare('SELECT timezone FROM bands WHERE id = ?').get(me.band_id);
+  const events = db.prepare(`
+    SELECT e.id, e.type, e.title, e.event_date, e.status, d.call_time
+    FROM events e LEFT JOIN event_details d ON d.event_id = e.id
+    WHERE e.band_id = ?
+    ORDER BY e.event_date, d.call_time, e.id
+  `).all(me.band_id);
+  res.json({ today: todayIn(timezone || DEFAULT_TIMEZONE), events });
+});
+
 // List events with RSVP counts, upcoming first by default.
 // my_status is the signed-in member's own response.
 app.get('/api/bands/:bandId/events', (req, res) => {
