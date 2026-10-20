@@ -46,6 +46,7 @@ export const api = {
   removeMember: (id) => request('DELETE', `/members/${id}`),
 
   events: (bandId, when = 'upcoming') => request('GET', `/bands/${bandId}/events?when=${when}`),
+  eventsOverview: (bandId) => request('GET', `/bands/${bandId}/events/overview`),
   event: (id) => request('GET', `/events/${id}`),
   createEvent: (bandId, event) => request('POST', `/bands/${bandId}/events`, event),
   updateEvent: (id, event) => request('PUT', `/events/${id}`, event),

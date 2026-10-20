@@ -3,6 +3,7 @@ import { api, formatDate, formatTime } from '../api';
 import IffyReasonInput from './IffyReasonInput';
 import ReasonTooltip from './ReasonTooltip';
 import CalendarSync from './CalendarSync';
+import EventsOverview from './EventsOverview';
 
 export default function EventList({ bandId, me, onOpen, onNew, onError }) {
   const [when, setWhen] = useState('upcoming');
@@ -60,6 +61,8 @@ export default function EventList({ bandId, me, onOpen, onNew, onError }) {
       </div>
 
       {showSync && <CalendarSync onClose={() => setShowSync(false)} onError={onError} />}
+
+      <EventsOverview bandId={bandId} refreshKey={events} onOpen={onOpen} onError={onError} />
 
       {events?.length > 0 && (
         <div className="legend" aria-hidden="true">
