@@ -443,11 +443,12 @@ button.link.inline { margin: 0; font-size: inherit; text-decoration: underline; 
 .instrument-group li.secondary { color: var(--muted); font-weight: 400; }
 .instrument-group li.me.secondary::after { content: none; }
 .secondary-picker .ghost.small { max-width: 14rem; text-align: left; white-space: normal; }
-.checklist { min-width: 12rem; }
+/* Rendered into <body> (see SecondaryPicker.jsx); fixed so the scrolling Members table can't clip it. */
+.checklist { position: fixed; z-index: 40; right: auto; top: auto; min-width: 13rem; }
 .checklist label { display: flex; align-items: center; gap: 0.5rem; padding: 0.35rem 0.6rem; border-radius: 6px; cursor: pointer; font-size: 0.9rem; }
 .checklist label:hover { background: var(--bg); }
 .checklist input { accent-color: var(--accent); }
 @media (max-width: 700px) {
   /* The Members table scrolls sideways, which would clip a dropdown: pin the checklist to the screen. */
-  .checklist { position: fixed; left: 16px; right: 16px; top: auto; bottom: 16px; z-index: 30; min-width: 0; }
+  .checklist { left: 16px; right: 16px; top: auto; bottom: 16px; min-width: 0; }
 }
