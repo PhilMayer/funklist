@@ -33,7 +33,13 @@ export default function EventDetail({ eventId, me, members = [], instruments, on
   const playing = myResponse
     ? String(myResponse.instrument_id ?? '')
     : pendingInstrument.memberId === me?.id ? pendingInstrument.value : '';
-  const goingCount = attendance.going_by_instrument.reduce((n, g) => n + g.members.length, 0);
+  // (Name) entries are people who also play that instrument; count each person once.
+  const goingCount = attendance.going_by_instrument.reduce((n, g) => n + g.members.filter((m) => !m.secondary).length, 0);
+  // "Playing" choices: the instruments I also play first, then everything else.
+  const alsoPlay = new Set(me?.secondary_instrument_ids || []);
+  const otherInstruments = instruments
+    .filter((i) => i.id !== me?.instrument_id)
+    .sort((a, b) => (alsoPlay.has(b.id) ? 1 : 0) - (alsoPlay.has(a.id) ? 1 : 0));
   const songs = (event.set_list || '').split('\n').map((s) => s.trim()).filter(Boolean);
 
   async function rsvp(status, instrument = playing) {
@@ -148,9 +154,9 @@ export default function EventDetail({ eventId, me, members = [], instruments, on
                 <span className="muted">Playing</span>
                 <select value={playing} disabled={saving} onChange={(e) => changeInstrument(e.target.value)}>
                   <option value="">{me.instrument ? `${me.instrument} (usual)` : 'No instrument'}</option>
-                  {instruments
-                    .filter((i) => i.id !== me.instrument_id)
-                    .map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}
+                  {otherInstruments.map((i) => (
+                    <option key={i.id} value={i.id}>{i.name}{alsoPlay.has(i.id) ? ' (also plays)' : ''}</option>
+                  ))}
                 </select>
               </label>
             </div>
@@ -197,9 +203,10 @@ export default function EventDetail({ eventId, me, members = [], instruments, on
                   <h3>{g.instrument}</h3>
                   <ul>
                     {g.members.map((m) => (
-                      <li key={m.id} className={me?.id === m.id ? 'me' : ''}>
-                        {m.name}
-                        {me?.id === m.id && <span className="you"> (you)</span>}
+                      <li key={m.id} className={`${me?.id === m.id ? 'me' : ''} ${m.secondary ? 'secondary' : ''}`}>
+                        {m.secondary ? `(${m.name})` : m.name}
+                        {m.secondary && <span className="sr-only">, also plays</span>}
+                        {me?.id === m.id && !m.secondary && <span className="you"> (you)</span>}
                         {m.primary_instrument && (
                           <span className="covering" title={`Usually plays ${m.primary_instrument}`}>
                             usually {m.primary_instrument}

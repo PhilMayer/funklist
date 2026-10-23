@@ -70,6 +70,7 @@ export default function EventList({ bandId, me, onOpen, onNew, onError }) {
           <span className="iffy">Iffy ?</span>
           <span className="pending">No response</span>
           <span className="no">Not going</span>
+          <span className="muted">(Name) also plays</span>
         </div>
       )}
 
@@ -108,11 +109,14 @@ export default function EventList({ bandId, me, onOpen, onNew, onError }) {
                           {g.members.map((m) => (
                             <li
                               key={m.id}
-                              className={`${m.status || 'pending'} ${me?.id === m.id ? 'me' : ''}`}
-                              title={m.iffy_reason ? undefined : `${m.name}: ${STATUS_LABELS[m.status || 'pending']}`}
+                              className={`${m.status || 'pending'} ${me?.id === m.id ? 'me' : ''} ${m.secondary ? 'secondary' : ''}`}
+                              title={m.iffy_reason ? undefined : `${m.name}${m.secondary ? ' (also plays)' : ''}: ${STATUS_LABELS[m.status || 'pending']}`}
                             >
+                              {m.secondary && <span aria-hidden="true">(</span>}
                               {m.iffy_reason ? <ReasonTooltip reason={m.iffy_reason}>{m.name}</ReasonTooltip> : m.name}
+                              {m.secondary && <span aria-hidden="true">)</span>}
                               {m.status === 'iffy' && <span className="iffy-mark" aria-hidden="true"> ?</span>}
+                              {m.secondary && <span className="sr-only">, also plays</span>}
                               {m.status !== 'yes' && (
                                 <span className="sr-only">
                                   {' '}({STATUS_LABELS[m.status || 'pending']}{m.iffy_reason && `: ${m.iffy_reason}`})
