@@ -3,7 +3,10 @@ const fs = require('fs');
 const path = require('path');
 
 // Load server/.env (GOOGLE_CLIENT_ID etc.) before anything reads process.env.
-try { process.loadEnvFile(path.join(__dirname, '.env')); } catch { /* no .env file */ }
+// (Skipped under tests so they never pick up real SMTP or Google settings.)
+if (process.env.NODE_ENV !== 'test') {
+  try { process.loadEnvFile(path.join(__dirname, '.env')); } catch { /* no .env file */ }
+}
 
 const express = require('express');
 const db = require('./db');
@@ -665,5 +668,10 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: 'Internal server error' });
 });
 
-const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => console.log(`Funklist API listening on http://localhost:${PORT}`));
+// `node index.js` starts the server; tests require() the app and listen on their own port.
+if (require.main === module) {
+  const PORT = process.env.PORT || 3001;
+  app.listen(PORT, () => console.log(`Funklist API listening on http://localhost:${PORT}`));
+}
+
+module.exports = app;

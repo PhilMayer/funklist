@@ -6,7 +6,8 @@
     "start": "node index.js",
     "dev": "node --watch index.js",
     "seed": "node seed.js",
-    "invite": "node scripts/invite.js"
+    "invite": "node scripts/invite.js",
+    "test": "node --test test/"
   },
   "keywords": [],
   "author": "",
