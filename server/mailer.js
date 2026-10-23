@@ -17,14 +17,18 @@ const transport = SMTP_HOST
   : null;
 
 const emailEnabled = Boolean(transport);
-console.log(emailEnabled ? `Email: sending via ${SMTP_HOST}:${SMTP_PORT}` : 'Email: SMTP_HOST not set, logging emails instead of sending');
+const testing = process.env.NODE_ENV === 'test';
+// Under tests, messages are collected here instead of being logged, so tests can inspect them.
+const sentMail = [];
+if (!testing) console.log(emailEnabled ? `Email: sending via ${SMTP_HOST}:${SMTP_PORT}` : 'Email: SMTP_HOST not set, logging emails instead of sending');
 
 async function sendMail({ to, subject, text, html, replyTo }) {
   if (!transport) {
+    if (testing) return void sentMail.push({ to, subject, text, replyTo });
     console.log(`[email not sent: SMTP not configured] to=${to} subject=${JSON.stringify(subject)}\n${text}\n`);
     return;
   }
   await transport.sendMail({ from: MAIL_FROM, to, subject, text, html, replyTo });
 }
 
-module.exports = { sendMail, emailEnabled };
+module.exports = { sendMail, emailEnabled, sentMail };
