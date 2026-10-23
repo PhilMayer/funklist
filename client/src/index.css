@@ -437,3 +437,17 @@ button.link.inline { margin: 0; font-size: inherit; text-decoration: underline; 
   padding: 0.1rem 0.45rem; border-radius: 6px; background: var(--gig-bg); color: var(--gig);
 }
 .admin-rsvp-reason { padding: 0.35rem 0.6rem; font-size: 0.85rem; }
+
+/* Secondary instruments: (Name) in sections someone also plays */
+.section-col li.secondary { font-weight: 400; opacity: 0.8; }
+.instrument-group li.secondary { color: var(--muted); font-weight: 400; }
+.instrument-group li.me.secondary::after { content: none; }
+.secondary-picker .ghost.small { max-width: 14rem; text-align: left; white-space: normal; }
+.checklist { min-width: 12rem; }
+.checklist label { display: flex; align-items: center; gap: 0.5rem; padding: 0.35rem 0.6rem; border-radius: 6px; cursor: pointer; font-size: 0.9rem; }
+.checklist label:hover { background: var(--bg); }
+.checklist input { accent-color: var(--accent); }
+@media (max-width: 700px) {
+  /* The Members table scrolls sideways, which would clip a dropdown: pin the checklist to the screen. */
+  .checklist { position: fixed; left: 16px; right: 16px; top: auto; bottom: 16px; z-index: 30; min-width: 0; }
+}

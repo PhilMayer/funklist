@@ -257,13 +257,38 @@ app.post('/api/invites/:code/join', (req, res) => {
 
 const memberSelect = (userId) => `
   SELECT m.id, m.band_id, m.name, m.email, m.instrument_id, i.name AS instrument,
-         m.user_id IS NOT NULL AS has_account, m.user_id IS ${Number(userId)} AS is_me, m.is_admin
+         m.user_id IS NOT NULL AS has_account, m.user_id IS ${Number(userId)} AS is_me, m.is_admin,
+         (SELECT GROUP_CONCAT(mi.instrument_id) FROM member_instruments mi WHERE mi.member_id = m.id) AS secondary_ids
   FROM band_members m
   LEFT JOIN instruments i ON i.id = m.instrument_id`;
 
-const toMember = (m) => m && {
-  ...m, has_account: Boolean(m.has_account), is_me: Boolean(m.is_me), is_admin: Boolean(m.is_admin),
+const toMember = (m) => {
+  if (!m) return m;
+  const { secondary_ids: ids, ...rest } = m;
+  return {
+    ...rest, has_account: Boolean(m.has_account), is_me: Boolean(m.is_me), is_admin: Boolean(m.is_admin),
+    secondary_instrument_ids: ids ? String(ids).split(',').map(Number).sort((a, b) => a - b) : [],
+  };
 };
+
+// Replaces a member's secondary instruments (when `ids` is given) and keeps the rule that the
+// primary instrument is never also a secondary.
+function saveSecondaryInstruments(memberId, primaryId, ids) {
+  if (ids !== undefined) {
+    if (!Array.isArray(ids)) throw new HttpError(400, 'secondary_instrument_ids must be a list');
+    const unique = [...new Set(ids.map(Number))].filter((id) => id !== primaryId);
+    for (const id of unique) {
+      if (!Number.isInteger(id)) throw new HttpError(400, 'Unknown instrument');
+      findOr404('SELECT id FROM instruments WHERE id = ?', id, 'Instrument');
+    }
+    db.prepare('DELETE FROM member_instruments WHERE member_id = ?').run(memberId);
+    const insert = db.prepare('INSERT INTO member_instruments (member_id, instrument_id) VALUES (?, ?)');
+    for (const id of unique) insert.run(memberId, id);
+  }
+  if (primaryId) {
+    db.prepare('DELETE FROM member_instruments WHERE member_id = ? AND instrument_id = ?').run(memberId, primaryId);
+  }
+}
 
 app.get('/api/bands/:bandId/members', (req, res) => {
   const me = requireMember(req, req.params.bandId);
@@ -305,8 +330,12 @@ function requireSameBand(req, memberId) {
 app.put('/api/members/:memberId', (req, res) => {
   const target = requireSameBand(req, req.params.memberId);
   const { name, email, instrumentId } = validateMember(req.body);
-  db.prepare('UPDATE band_members SET name = ?, email = ?, instrument_id = ? WHERE id = ?')
-    .run(name, email, instrumentId, target.id);
+  // secondary_instrument_ids: omitted keeps the current list; [] clears it.
+  db.transaction(() => {
+    db.prepare('UPDATE band_members SET name = ?, email = ?, instrument_id = ? WHERE id = ?')
+      .run(name, email, instrumentId, target.id);
+    saveSecondaryInstruments(target.id, instrumentId, req.body.secondary_instrument_ids);
+  })();
   res.json(toMember(db.prepare(`${memberSelect(req.user.id)} WHERE m.id = ?`).get(target.id)));
 });
 
@@ -405,7 +434,8 @@ app.get('/api/bands/:bandId/events', (req, res) => {
   // Every band member for every listed event, with their response (null = hasn't responded),
   // grouped by the instrument they're playing. Within an instrument: yes, iffy, no response, no.
   const attendance = db.prepare(`
-    SELECT e.id AS event_id, a.status, a.iffy_reason, m.id, m.name, i.name AS instrument
+    SELECT e.id AS event_id, a.status, a.iffy_reason, m.id, m.name,
+           i.id AS instrument_id, i.name AS instrument, i.sort_order
     FROM events e
     JOIN band_members m ON m.band_id = e.band_id
     LEFT JOIN event_attendance a ON a.event_id = e.id AND a.member_id = m.id
@@ -415,21 +445,66 @@ app.get('/api/bands/:bandId/events', (req, res) => {
              CASE a.status WHEN 'yes' THEN 0 WHEN 'iffy' THEN 1 WHEN 'no' THEN 3 ELSE 2 END, m.name
   `).all({ bandId: me.band_id, today });
   const byEvent = new Map();
-  for (const { event_id, status, iffy_reason, id, name, instrument } of attendance) {
-    if (!byEvent.has(event_id)) byEvent.set(event_id, []);
-    byEvent.get(event_id).push({ id, name, instrument, status, iffy_reason });
+  for (const row of attendance) {
+    if (!byEvent.has(row.event_id)) byEvent.set(row.event_id, []);
+    byEvent.get(row.event_id).push(row);
   }
+  const plays = instrumentsPlayed(me.band_id);
+  const shape = ({ id, name, instrument, status, iffy_reason, secondary }) =>
+    ({ id, name, instrument, status, iffy_reason, ...(secondary ? { secondary: true } : {}) });
 
-  res.json(rows.map((r) => ({
-    ...r,
-    yes_count: r.yes_count || 0,
-    iffy_count: r.iffy_count || 0,
-    no_count: r.no_count || 0,
-    no_response_count: (byEvent.get(r.id) || []).filter((m) => !m.status).length,
-    attendees: byEvent.get(r.id) || [],
-    quorum: quorumFor(byEvent.get(r.id) || []),
-  })));
+  res.json(rows.map((r) => {
+    const main = byEvent.get(r.id) || [];
+    return {
+      ...r,
+      yes_count: r.yes_count || 0,
+      iffy_count: r.iffy_count || 0,
+      no_count: r.no_count || 0,
+      no_response_count: main.filter((m) => !m.status).length,
+      // Main entries plus (Name) entries in the other sections each member also plays.
+      attendees: withSecondaryEntries(main, plays).map(shape),
+      // Counts and quorum use main entries only: a player counts once, for what they're playing.
+      quorum: quorumFor(main),
+    };
+  }));
 });
+
+// Every instrument each member of a band plays (primary + secondaries): Map(memberId -> [{ id, name, sort_order }]).
+function instrumentsPlayed(bandId) {
+  const rows = db.prepare(`
+    SELECT m.id AS member_id, i.id, i.name, i.sort_order
+    FROM band_members m JOIN instruments i ON i.id = m.instrument_id WHERE m.band_id = @band
+    UNION
+    SELECT mi.member_id, i.id, i.name, i.sort_order
+    FROM member_instruments mi JOIN band_members m ON m.id = mi.member_id JOIN instruments i ON i.id = mi.instrument_id
+    WHERE m.band_id = @band
+  `).all({ band: bandId });
+  const map = new Map();
+  for (const { member_id: memberId, ...inst } of rows) {
+    if (!map.has(memberId)) map.set(memberId, []);
+    map.get(memberId).push(inst);
+  }
+  return map;
+}
+
+const STATUS_RANK = { yes: 0, iffy: 1, no: 3 };
+// Adds a secondary copy of each entry in every other instrument that member plays (not the one
+// they're playing), then sorts: instrument order, main before secondary, status, name.
+function withSecondaryEntries(entries, plays) {
+  const all = [...entries];
+  for (const e of entries) {
+    for (const inst of plays.get(e.id) || []) {
+      if (inst.id === e.instrument_id) continue;
+      all.push({ ...e, instrument_id: inst.id, instrument: inst.name, sort_order: inst.sort_order, secondary: true });
+    }
+  }
+  return all.sort((a, b) =>
+    (a.sort_order ?? 9999) - (b.sort_order ?? 9999)
+    || String(a.instrument ?? '').localeCompare(String(b.instrument ?? ''))
+    || (a.secondary ? 1 : 0) - (b.secondary ? 1 : 0)
+    || (STATUS_RANK[a.status] ?? 2) - (STATUS_RANK[b.status] ?? 2)
+    || a.name.localeCompare(b.name));
+}
 
 // Full event: details + attendance. "Yes" responders are grouped by the instrument they're
 // playing at this event (their per-event choice, falling back to their primary instrument).
@@ -448,7 +523,7 @@ function getEvent(eventId) {
   if (!event) throw new HttpError(404, 'Event not found');
 
   const members = db.prepare(`
-    SELECT m.id, m.name, i.name AS instrument, i.sort_order, a.status, a.iffy_reason, a.updated_at,
+    SELECT m.id, m.name, i.id AS instrument_id, i.name AS instrument, i.sort_order, a.status, a.iffy_reason, a.updated_at,
            a.instrument_id AS event_instrument_id, p.name AS primary_instrument
     FROM band_members m
     LEFT JOIN event_attendance a ON a.member_id = m.id AND a.event_id = ?
@@ -458,15 +533,14 @@ function getEvent(eventId) {
     ORDER BY COALESCE(i.sort_order, 9999), i.name, m.name
   `).all(eventId, event.band_id);
 
+  // Yes responders by the instrument they're playing, plus (Name) entries in the other sections
+  // they also play. Entries arrive sorted by instrument, so consecutive runs form the groups.
   const goingByInstrument = [];
-  const groupIndex = new Map();
-  for (const m of members.filter((m) => m.status === 'yes')) {
+  const going = withSecondaryEntries(members.filter((m) => m.status === 'yes'), instrumentsPlayed(event.band_id));
+  for (const m of going) {
     const key = m.instrument || 'No instrument';
-    if (!groupIndex.has(key)) {
-      groupIndex.set(key, goingByInstrument.length);
-      goingByInstrument.push({ instrument: key, members: [] });
-    }
-    goingByInstrument[groupIndex.get(key)].members.push({
+    if (goingByInstrument.at(-1)?.instrument !== key) goingByInstrument.push({ instrument: key, members: [] });
+    goingByInstrument.at(-1).members.push(m.secondary ? { id: m.id, name: m.name, secondary: true } : {
       id: m.id,
       name: m.name,
       // Set when they're covering something other than their usual instrument.

@@ -50,6 +50,14 @@ CREATE TABLE IF NOT EXISTS band_members (
 );
 CREATE INDEX IF NOT EXISTS idx_members_band ON band_members(band_id);
 
+-- Other instruments a member also plays ("also plays"). Never includes their primary instrument.
+-- Shown as (Name) in those sections on events; doesn't count toward quorum.
+CREATE TABLE IF NOT EXISTS member_instruments (
+  member_id      INTEGER NOT NULL REFERENCES band_members(id) ON DELETE CASCADE,
+  instrument_id  INTEGER NOT NULL REFERENCES instruments(id) ON DELETE CASCADE,
+  PRIMARY KEY (member_id, instrument_id)
+);
+
 CREATE TABLE IF NOT EXISTS events (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
   band_id     INTEGER NOT NULL REFERENCES bands(id) ON DELETE CASCADE,

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api';
 import TimeZoneSetting from './TimeZoneSetting';
+import SecondaryPicker from './SecondaryPicker';
 
 const NEW_INSTRUMENT = '__new__';
 
@@ -75,6 +76,17 @@ export default function MembersPanel({
     } catch (err) {
       onError(err.message);
     }
+  }
+
+  async function changeSecondaries(member, ids) {
+    try {
+      await api.updateMember(member.id, {
+        name: member.name, email: member.email, instrument_id: member.instrument_id, secondary_instrument_ids: ids,
+      });
+    } catch (err) {
+      onError(err.message);
+    }
+    onChanged();
   }
 
   async function changeEmail(member, value) {
@@ -170,7 +182,7 @@ export default function MembersPanel({
         <div className="table-wrap">
         <table className="members">
           <thead>
-            <tr><th>Name</th><th>Instrument</th><th>Email <span className="muted">(for event emails)</span></th><th /></tr>
+            <tr><th>Name</th><th>Instrument</th><th>Also plays</th><th>Email <span className="muted">(for event emails)</span></th><th /></tr>
           </thead>
           <tbody>
             {members.map((m) => (
@@ -190,6 +202,9 @@ export default function MembersPanel({
                   <select value={m.instrument_id ?? ''} onChange={(e) => changeInstrument(m, e.target.value)}>
                     {instrumentOptions}
                   </select>
+                </td>
+                <td>
+                  <SecondaryPicker member={m} instruments={instruments} onSave={(ids) => changeSecondaries(m, ids)} />
                 </td>
                 <td>
                   <input
