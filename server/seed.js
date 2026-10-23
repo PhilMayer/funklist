@@ -20,7 +20,14 @@ function seedDemoUser() {
     SELECT m.id, m.name FROM band_members m JOIN bands b ON b.id = m.band_id
     WHERE b.name = ? AND m.user_id IS NULL ORDER BY m.id LIMIT 1
   `).get(BAND);
-  if (member) db.prepare('UPDATE band_members SET user_id = ? WHERE id = ?').run(userId, member.id);
+  // The demo login plays the band's creator, so it's the admin unless the band already has one.
+  if (member) {
+    db.prepare(`
+      UPDATE band_members SET user_id = ?, is_admin = NOT EXISTS (
+        SELECT 1 FROM band_members WHERE band_id = band_members.band_id AND is_admin = 1
+      ) WHERE id = ?
+    `).run(userId, member.id);
+  }
   console.log(`Created login "${DEMO_USERNAME}"${member ? ` (plays as ${member.name})` : ''}. Password is in seed.js.`);
 }
 

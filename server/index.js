@@ -171,7 +171,7 @@ app.post('/api/bands', (req, res) => {
   const bandId = db.transaction(() => {
     const id = db.prepare('INSERT INTO bands (name, invite_code, timezone) VALUES (?, ?, ?)')
       .run(name, newInviteCode(), timezone).lastInsertRowid;
-    db.prepare('INSERT INTO band_members (band_id, name, email, instrument_id, user_id) VALUES (?, ?, ?, ?, ?)')
+    db.prepare('INSERT INTO band_members (band_id, name, email, instrument_id, user_id, is_admin) VALUES (?, ?, ?, ?, ?, 1)')
       .run(id, req.user.display_name, req.user.email, instrumentId, req.user.id);
     return id;
   })();
@@ -241,6 +241,12 @@ app.post('/api/invites/:code/join', (req, res) => {
       .run(band.id, clean(req.body.name) || req.user.display_name, req.user.email,
         validInstrumentId(req.body.instrument_id), req.user.id);
   }
+  // A band without any admin (e.g. created before admins existed, nobody signed up yet) gets one.
+  db.prepare(`
+    UPDATE band_members SET is_admin = 1
+    WHERE band_id = @band AND user_id = @user
+      AND NOT EXISTS (SELECT 1 FROM band_members WHERE band_id = @band AND is_admin = 1)
+  `).run({ band: band.id, user: req.user.id });
   res.status(201).json({ id: band.id, name: band.name });
 });
 
@@ -248,11 +254,13 @@ app.post('/api/invites/:code/join', (req, res) => {
 
 const memberSelect = (userId) => `
   SELECT m.id, m.band_id, m.name, m.email, m.instrument_id, i.name AS instrument,
-         m.user_id IS NOT NULL AS has_account, m.user_id IS ${Number(userId)} AS is_me
+         m.user_id IS NOT NULL AS has_account, m.user_id IS ${Number(userId)} AS is_me, m.is_admin
   FROM band_members m
   LEFT JOIN instruments i ON i.id = m.instrument_id`;
 
-const toMember = (m) => m && { ...m, has_account: Boolean(m.has_account), is_me: Boolean(m.is_me) };
+const toMember = (m) => m && {
+  ...m, has_account: Boolean(m.has_account), is_me: Boolean(m.is_me), is_admin: Boolean(m.is_admin),
+};
 
 app.get('/api/bands/:bandId/members', (req, res) => {
   const me = requireMember(req, req.params.bandId);
@@ -296,6 +304,27 @@ app.put('/api/members/:memberId', (req, res) => {
   const { name, email, instrumentId } = validateMember(req.body);
   db.prepare('UPDATE band_members SET name = ?, email = ?, instrument_id = ? WHERE id = ?')
     .run(name, email, instrumentId, target.id);
+  res.json(toMember(db.prepare(`${memberSelect(req.user.id)} WHERE m.id = ?`).get(target.id)));
+});
+
+// Make a member an admin, or remove admin. Admins only; the member needs an account, and a
+// band always keeps at least one admin.
+app.put('/api/members/:memberId/admin', (req, res) => {
+  const target = findOr404('SELECT id, band_id, user_id, is_admin FROM band_members WHERE id = ?', req.params.memberId, 'Member');
+  let me;
+  try {
+    me = requireMember(req, target.band_id);
+  } catch {
+    throw new HttpError(404, 'Member not found');
+  }
+  if (!me.is_admin) throw new HttpError(403, 'Only band admins can change who is an admin');
+  const makeAdmin = req.body.is_admin === true;
+  if (makeAdmin && !target.user_id) throw new HttpError(400, 'Only members with an account can be admins');
+  if (!makeAdmin && target.is_admin) {
+    const admins = db.prepare('SELECT COUNT(*) AS n FROM band_members WHERE band_id = ? AND is_admin = 1').get(target.band_id).n;
+    if (admins <= 1) throw new HttpError(409, 'A band needs at least one admin. Make someone else an admin first.');
+  }
+  db.prepare('UPDATE band_members SET is_admin = ? WHERE id = ?').run(makeAdmin ? 1 : 0, target.id);
   res.json(toMember(db.prepare(`${memberSelect(req.user.id)} WHERE m.id = ?`).get(target.id)));
 });
 
@@ -567,10 +596,17 @@ app.delete('/api/events/:eventId', (req, res) => {
 
 // ---------- RSVP ----------
 
-// You can only RSVP for yourself: the member comes from the session, not the request body.
+// Members RSVP for themselves (from the session); admins may pass member_id to answer for a bandmate.
 app.put('/api/events/:eventId/rsvp', (req, res) => {
-  const { event, member } = requireEventMember(req, req.params.eventId);
+  const { event, member: me } = requireEventMember(req, req.params.eventId);
   if (event.status === 'cancelled') throw new HttpError(409, 'This event was cancelled, so it no longer takes RSVPs');
+  // Admins may answer for any member of the band (member_id); everyone else answers for themselves.
+  let member = me;
+  if (req.body.member_id != null && Number(req.body.member_id) !== me.id) {
+    if (!me.is_admin) throw new HttpError(403, 'Only band admins can RSVP for other members');
+    member = db.prepare('SELECT * FROM band_members WHERE id = ? AND band_id = ?').get(Number(req.body.member_id), event.band_id);
+    if (!member) throw new HttpError(404, 'Member not found');
+  }
   const memberId = member.id;
   const status = req.body.status;
   if (!RSVP_STATUSES.includes(status)) throw new HttpError(400, 'Status must be yes, no, or iffy');

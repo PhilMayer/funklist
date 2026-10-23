@@ -87,6 +87,25 @@ export default function MembersPanel({
     onChanged(); // also resets the field if the save failed
   }
 
+  const meMember = members.find((m) => m.is_me);
+  const adminCount = members.filter((m) => m.is_admin).length;
+
+  async function toggleAdmin(member) {
+    const makeAdmin = !member.is_admin;
+    const question = makeAdmin
+      ? `Make ${member.name} an admin? Admins can RSVP for anyone in the band and make other admins.`
+      : member.is_me
+        ? 'Remove your own admin access? You’ll need another admin to give it back.'
+        : `Remove ${member.name}’s admin access?`;
+    if (!window.confirm(question)) return;
+    try {
+      await api.setAdmin(member.id, makeAdmin);
+    } catch (err) {
+      onError(err.message);
+    }
+    onChanged();
+  }
+
   async function remove(member) {
     const question = member.is_me
       ? 'Leave this band? Your RSVPs will be removed, and you’ll need an invite link to rejoin.'
@@ -158,6 +177,7 @@ export default function MembersPanel({
               <tr key={m.id}>
                 <td>
                   {m.name}{' '}
+                  {m.is_admin && <span className="pill admin">admin</span>}{' '}
                   {m.is_me ? (
                     <span className="pill">you</span>
                   ) : !m.has_account && (
@@ -183,7 +203,12 @@ export default function MembersPanel({
                     onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
                   />
                 </td>
-                <td className="right">
+                <td className="right nowrap">
+                  {meMember?.is_admin && m.has_account && !(m.is_admin && adminCount === 1) && (
+                    <button className="ghost small admin-toggle" onClick={() => toggleAdmin(m)}>
+                      {m.is_admin ? 'Remove admin' : 'Make admin'}
+                    </button>
+                  )}
                   <button className="ghost danger small" onClick={() => remove(m)}>
                     {m.is_me ? 'Leave band' : 'Remove'}
                   </button>

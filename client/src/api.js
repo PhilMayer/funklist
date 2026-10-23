@@ -53,11 +53,14 @@ export const api = {
   deleteEvent: (id) => request('DELETE', `/events/${id}`),
   // status: 'confirmed' | 'cancelled'. Emails the band when it changes.
   setEventStatus: (id, status) => request('PUT', `/events/${id}/status`, { status }),
-  // Always RSVPs as the signed-in member.
+  // RSVPs as the signed-in member, or as memberId (admins only).
   // instrumentId: undefined keeps the current choice; null means the member's primary instrument.
   // iffyReason (Iffy only): undefined keeps the saved reason; '' clears it.
-  rsvp: (eventId, status, instrumentId, iffyReason) =>
-    request('PUT', `/events/${eventId}/rsvp`, { status, instrument_id: instrumentId, iffy_reason: iffyReason }),
+  rsvp: (eventId, status, instrumentId, iffyReason, memberId) =>
+    request('PUT', `/events/${eventId}/rsvp`, {
+      status, instrument_id: instrumentId, iffy_reason: iffyReason, member_id: memberId,
+    }),
+  setAdmin: (memberId, isAdmin) => request('PUT', `/members/${memberId}/admin`, { is_admin: isAdmin }),
 };
 
 export function formatDate(iso) {
