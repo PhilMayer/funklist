@@ -422,3 +422,18 @@ button.link.inline { margin: 0; font-size: inherit; text-decoration: underline; 
 .status-pill.pending { color: var(--iffy); }
 .status-pill.confirmed { color: var(--yes); }
 .status-pill.cancelled { color: var(--no); }
+
+/* Admins */
+.pill.admin { background: var(--gig-bg); color: var(--gig); }
+.admin-toggle { margin-right: 0.4rem; }
+.admin-rsvp {
+  display: grid; gap: 0.5rem; margin-bottom: 1rem; padding: 0.7rem 1rem; border-radius: var(--radius);
+  background: var(--surface); border: 1px dashed var(--border); font-size: 0.9rem;
+}
+.admin-rsvp-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem 1rem; }
+.admin-rsvp-row label { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+.admin-tag {
+  font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
+  padding: 0.1rem 0.45rem; border-radius: 6px; background: var(--gig-bg); color: var(--gig);
+}
+.admin-rsvp-reason { padding: 0.35rem 0.6rem; font-size: 0.85rem; }

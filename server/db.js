@@ -28,6 +28,16 @@ if (!hasColumn('band_members', 'user_id')) {
 if (!hasColumn('bands', 'invite_code')) {
   db.exec('ALTER TABLE bands ADD COLUMN invite_code TEXT');
 }
+if (!hasColumn('band_members', 'is_admin')) {
+  db.exec('ALTER TABLE band_members ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0');
+  // Bands from before admins existed don't record their creator: make the earliest member
+  // with an account the admin.
+  db.exec(`
+    UPDATE band_members SET is_admin = 1 WHERE id IN (
+      SELECT MIN(id) FROM band_members WHERE user_id IS NOT NULL GROUP BY band_id
+    )
+  `);
+}
 if (!hasColumn('users', 'calendar_token')) {
   db.exec('ALTER TABLE users ADD COLUMN calendar_token TEXT');
 }

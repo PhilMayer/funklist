@@ -188,6 +188,7 @@ function SignedInApp({ user, joinCode, onDoneJoining, onSignOut }) {
           <EventDetail
             eventId={view.id}
             me={me}
+            members={members}
             instruments={instruments}
             onBack={() => setView({ name: 'list' })}
             onEdit={(event) => setView({ name: 'edit', event })}

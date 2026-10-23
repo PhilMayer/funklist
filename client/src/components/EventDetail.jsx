@@ -4,6 +4,7 @@ import { notifiedMessage } from '../messages';
 import IffyReasonInput from './IffyReasonInput';
 import ReasonTooltip from './ReasonTooltip';
 import AddToCalendar from './AddToCalendar';
+import AdminRsvp from './AdminRsvp';
 
 const RSVP_OPTIONS = [
   { value: 'yes', label: 'Yes' },
@@ -11,7 +12,7 @@ const RSVP_OPTIONS = [
   { value: 'no', label: 'No' },
 ];
 
-export default function EventDetail({ eventId, me, instruments, onBack, onEdit, onDuplicate, onNotice, onError }) {
+export default function EventDetail({ eventId, me, members = [], instruments, onBack, onEdit, onDuplicate, onNotice, onError }) {
   const [event, setEvent] = useState(null);
   const [saving, setSaving] = useState(false);
   // Instrument picked before RSVPing, held until the first RSVP click. Keyed by member so
@@ -40,6 +41,17 @@ export default function EventDetail({ eventId, me, instruments, onBack, onEdit, 
     try {
       setEvent(await api.rsvp(event.id, status, instrument ? Number(instrument) : null));
       setJustChoseIffy(status === 'iffy' && myStatus !== 'iffy');
+    } catch (e) {
+      onError(e.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function rsvpFor(memberId, status, iffyReason) {
+    setSaving(true);
+    try {
+      setEvent(await api.rsvp(event.id, status, undefined, iffyReason, memberId));
     } catch (e) {
       onError(e.message);
     } finally {
@@ -167,6 +179,10 @@ export default function EventDetail({ eventId, me, instruments, onBack, onEdit, 
           <span className="muted">Loading…</span>
         )}
       </div>
+      )}
+
+      {me?.is_admin && event.status !== 'cancelled' && (
+        <AdminRsvp members={members} me={me} responses={attendance.responses} saving={saving} onRsvp={rsvpFor} />
       )}
 
       <div className="grid">
