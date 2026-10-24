@@ -42,7 +42,7 @@ test('band creation validates the instrument list', async () => {
   assert.equal(await bad({ instruments: JAZZ, instrument_name: 'Tuba' }), 400, 'creator’s instrument must be listed');
   const dflt = (await c.post('/api/bands', { name: 'Default Band' })).data;
   const list = (await c.get(`/api/bands/${dflt.id}/instruments`)).data;
-  assert.deepEqual(list.map((i) => i.name), ['Vocals', 'Percussion', 'Trumpets', 'Midhorns', 'Saxophones', 'Tubas', 'Dance Team']);
+  assert.deepEqual(list.map((i) => i.name), ['Vocals', 'Percussion', 'Trumpets', 'Midhorns', 'Saxophones', 'Tubas']);
 });
 
 test('admins edit the list; members can’t; instruments in use as a main instrument can’t be removed', async () => {
@@ -92,6 +92,6 @@ test('existing bands get the default lineup plus instruments their members alrea
   srv.db.prepare('DELETE FROM band_instruments WHERE band_id = ?').run(band.id); // as before this feature
   require('../db').addDefaultInstruments(band.id);
   const list = (await c.get(`/api/bands/${band.id}/instruments`)).data;
-  assert.deepEqual(list.map((i) => i.name).slice(-2), ['Dance Team', 'Banjo']);
+  assert.deepEqual(list.map((i) => i.name).slice(-2), ['Tubas', 'Banjo']);
   assert.equal(list.find((i) => i.name === 'Trumpets').min_count, 2);
 });
