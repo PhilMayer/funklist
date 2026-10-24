@@ -15,8 +15,8 @@ const tomorrow = () => {
 // A band whose admin plays Vocals; "Phil" (no account) plays Saxophones and also Trumpets + Tubas.
 async function setup(prefix) {
   const boss = await signUp(srv.base, `${prefix}boss`);
-  const inst = Object.fromEntries((await boss.get('/api/instruments')).data.map((i) => [i.name, i.id]));
-  const band = (await boss.post('/api/bands', { name: `${prefix} Band`, instrument_id: inst.Vocals })).data;
+  const band = (await boss.post('/api/bands', { name: `${prefix} Band`, instrument_name: 'Vocals' })).data;
+  const inst = Object.fromEntries((await boss.get(`/api/bands/${band.id}/instruments`)).data.map((i) => [i.name, i.id]));
   const phil = (await boss.post(`/api/bands/${band.id}/members`, { name: 'Phil', instrument_id: inst.Saxophones })).data;
   const update = (fields) => boss.put(`/api/members/${phil.id}`, { name: 'Phil', instrument_id: inst.Saxophones, ...fields });
   return { boss, band, phil, inst, update };
@@ -36,7 +36,7 @@ test('secondary instruments: set, keep, clear, and never include the primary', a
   assert.deepEqual(r.data.secondary_instrument_ids, [inst.Tubas]);
 
   assert.equal((await update({ secondary_instrument_ids: 'Tubas' })).status, 400);
-  assert.equal((await update({ secondary_instrument_ids: [99999] })).status, 404);
+  assert.equal((await update({ secondary_instrument_ids: [99999] })).status, 400, 'not on the band’s list');
   r = await update({ secondary_instrument_ids: [] });
   assert.deepEqual(r.data.secondary_instrument_ids, []);
   const listed = (await boss.get(`/api/bands/${band.id}/members`)).data.find((m) => m.id === phil.id);

@@ -10,7 +10,7 @@ if (process.env.NODE_ENV !== 'test') {
 
 const express = require('express');
 const db = require('./db');
-const { newInviteCode } = require('./db');
+const { newInviteCode, DEFAULT_INSTRUMENTS, addDefaultInstruments } = require('./db');
 const { HttpError, clean } = require('./errors');
 const auth = require('./auth');
 const { quorumFor } = require('./quorum');
@@ -134,18 +134,63 @@ function requireEventMember(req, eventId) {
 
 // ---------- Instruments ----------
 
-app.get('/api/instruments', (req, res) => {
-  res.json(db.prepare('SELECT * FROM instruments ORDER BY sort_order, name').all());
+// The lineup a new band starts with (the create-band form pre-fills it; everything is editable).
+app.get('/api/instruments/defaults', (req, res) => {
+  res.json(DEFAULT_INSTRUMENTS);
 });
 
-app.post('/api/instruments', (req, res) => {
-  const name = clean(req.body.name);
-  if (!name) throw new HttpError(400, 'Instrument name is required');
-  const existing = db.prepare('SELECT * FROM instruments WHERE name = ?').get(name);
-  if (existing) return res.json(existing);
-  const { lastInsertRowid } = db.prepare('INSERT INTO instruments (name) VALUES (?)').run(name);
-  res.status(201).json(db.prepare('SELECT * FROM instruments WHERE id = ?').get(lastInsertRowid));
-});
+// A band's instruments in display order, with quorum minimums: [{ id, name, min_count }].
+const bandInstruments = (bandId) => db.prepare(`
+  SELECT i.id, i.name, bi.min_count FROM band_instruments bi JOIN instruments i ON i.id = bi.instrument_id
+  WHERE bi.band_id = ? ORDER BY bi.sort_order, i.name
+`).all(bandId);
+// The same, shaped for quorumFor().
+const quorumRequirements = (bandId) =>
+  bandInstruments(bandId).map(({ id, name, min_count: min }) => ({ instrument_id: id, name, min_count: min }));
+
+// Validates an instrument list from the app: [{ name, min_count }], in order. Returns it cleaned up.
+function validInstrumentList(list) {
+  if (!Array.isArray(list) || list.length === 0) throw new HttpError(400, 'Add at least one instrument');
+  if (list.length > 40) throw new HttpError(400, 'That’s too many instruments (40 at most)');
+  const seen = new Set();
+  return list.map((item) => {
+    const name = clean(item?.name);
+    if (!name || name.length > 40) throw new HttpError(400, 'Instrument names must be 1–40 characters');
+    if (seen.has(name.toLowerCase())) throw new HttpError(400, `"${name}" is listed twice`);
+    seen.add(name.toLowerCase());
+    const min = Number(item.min_count ?? 0);
+    if (!Number.isInteger(min) || min < 0 || min > 50) throw new HttpError(400, `The minimum for ${name} must be a whole number from 0 to 50`);
+    return { name, min_count: min };
+  });
+}
+
+// Saves a band's instrument list (validated). Instruments are shared by name across bands.
+// Refuses to drop an instrument that's still someone's main instrument; drops it from "also plays".
+function saveBandInstruments(bandId, list) {
+  db.transaction(() => {
+    const getId = db.prepare('SELECT id FROM instruments WHERE name = ?');
+    const ids = list.map(({ name }) => {
+      db.prepare('INSERT OR IGNORE INTO instruments (name, sort_order) VALUES (?, 100)').run(name);
+      return getId.get(name).id;
+    });
+    const placeholders = ids.map(() => '?').join(',');
+    const stillPlayed = db.prepare(`
+      SELECT i.name, GROUP_CONCAT(m.name, ', ') AS players FROM band_members m JOIN instruments i ON i.id = m.instrument_id
+      WHERE m.band_id = ? AND m.instrument_id NOT IN (${placeholders}) GROUP BY i.id
+    `).all(bandId, ...ids);
+    if (stillPlayed.length) {
+      const { name, players } = stillPlayed[0];
+      throw new HttpError(409, `${players} ${players.includes(',') ? 'play' : 'plays'} ${name}. Give them another instrument before removing ${name}.`);
+    }
+    db.prepare(`
+      DELETE FROM member_instruments WHERE instrument_id NOT IN (${placeholders})
+        AND member_id IN (SELECT id FROM band_members WHERE band_id = ?)
+    `).run(...ids, bandId);
+    db.prepare('DELETE FROM band_instruments WHERE band_id = ?').run(bandId);
+    const insert = db.prepare('INSERT INTO band_instruments (band_id, instrument_id, sort_order, min_count) VALUES (?, ?, ?, ?)');
+    ids.forEach((id, i) => insert.run(bandId, id, i, list[i].min_count));
+  })();
+}
 
 // ---------- Bands ----------
 
@@ -158,9 +203,12 @@ app.get('/api/bands', (req, res) => {
   `).all(req.user.id));
 });
 
-function validInstrumentId(value) {
+// An instrument id from the request, which must be on the band's instrument list (or empty).
+function validInstrumentId(value, bandId) {
   const id = value ? Number(value) : null;
-  if (id) findOr404('SELECT id FROM instruments WHERE id = ?', id, 'Instrument');
+  if (id && !db.prepare('SELECT 1 FROM band_instruments WHERE band_id = ? AND instrument_id = ?').get(bandId, id)) {
+    throw new HttpError(400, 'That instrument isn’t on this band’s instrument list');
+  }
   return id;
 }
 
@@ -168,12 +216,22 @@ function validInstrumentId(value) {
 app.post('/api/bands', (req, res) => {
   const name = clean(req.body.name);
   if (!name) throw new HttpError(400, 'Band name is required');
-  const instrumentId = validInstrumentId(req.body.instrument_id);
+  // The creator's instruments and quorum minimums; without a list, the default lineup.
+  const instruments = req.body.instruments === undefined ? null : validInstrumentList(req.body.instruments);
+  const myInstrument = clean(req.body.instrument_name);
+  if (myInstrument && instruments && !instruments.some((i) => i.name.toLowerCase() === myInstrument.toLowerCase())) {
+    throw new HttpError(400, 'Your instrument has to be one of the band’s instruments');
+  }
   // The app sends the creator's browser time zone.
   const timezone = isValidTimeZone(req.body.timezone) ? req.body.timezone : DEFAULT_TIMEZONE;
   const bandId = db.transaction(() => {
     const id = db.prepare('INSERT INTO bands (name, invite_code, timezone) VALUES (?, ?, ?)')
       .run(name, newInviteCode(), timezone).lastInsertRowid;
+    if (instruments) saveBandInstruments(id, instruments);
+    else addDefaultInstruments(id);
+    const instrumentId = myInstrument
+      ? db.prepare('SELECT id FROM instruments WHERE name = ?').get(myInstrument)?.id ?? null
+      : validInstrumentId(req.body.instrument_id, id);
     db.prepare('INSERT INTO band_members (band_id, name, email, instrument_id, user_id, is_admin) VALUES (?, ?, ?, ?, ?, 1)')
       .run(id, req.user.display_name, req.user.email, instrumentId, req.user.id);
     return id;
@@ -188,6 +246,19 @@ app.get('/api/bands/:bandId', (req, res) => {
   const member = requireMember(req, req.params.bandId);
   const band = db.prepare('SELECT id, name, invite_code, timezone FROM bands WHERE id = ?').get(member.band_id);
   res.json({ ...band, member_id: member.id });
+});
+
+// The band's instruments and quorum minimums. Any member can see them; admins can change them.
+app.get('/api/bands/:bandId/instruments', (req, res) => {
+  const me = requireMember(req, req.params.bandId);
+  res.json(bandInstruments(me.band_id));
+});
+
+app.put('/api/bands/:bandId/instruments', (req, res) => {
+  const me = requireMember(req, req.params.bandId);
+  if (!me.is_admin) throw new HttpError(403, 'Only band admins can change the band’s instruments');
+  saveBandInstruments(me.band_id, validInstrumentList(req.body.instruments));
+  res.json(bandInstruments(me.band_id));
 });
 
 // Band settings. Currently just the time zone, which decides when events move from Upcoming to Past.
@@ -221,10 +292,11 @@ app.get('/api/invites/:code', (req, res) => {
   const unclaimed = db.prepare(`
     SELECT m.id, m.name, i.name AS instrument
     FROM band_members m LEFT JOIN instruments i ON i.id = m.instrument_id
+    LEFT JOIN band_instruments bi ON bi.band_id = m.band_id AND bi.instrument_id = m.instrument_id
     WHERE m.band_id = ? AND m.user_id IS NULL
-    ORDER BY COALESCE(i.sort_order, 9999), m.name
+    ORDER BY COALESCE(bi.sort_order, 9999), m.name
   `).all(band.id);
-  res.json({ band, already_member: Boolean(already), unclaimed_members: unclaimed });
+  res.json({ band, already_member: Boolean(already), unclaimed_members: unclaimed, instruments: bandInstruments(band.id) });
 });
 
 // Join either by claiming an existing (account-less) member profile, or as a new member.
@@ -242,7 +314,7 @@ app.post('/api/invites/:code/join', (req, res) => {
   } else {
     db.prepare('INSERT INTO band_members (band_id, name, email, instrument_id, user_id) VALUES (?, ?, ?, ?, ?)')
       .run(band.id, clean(req.body.name) || req.user.display_name, req.user.email,
-        validInstrumentId(req.body.instrument_id), req.user.id);
+        validInstrumentId(req.body.instrument_id, band.id), req.user.id);
   }
   // A band without any admin (e.g. created before admins existed, nobody signed up yet) gets one.
   db.prepare(`
@@ -260,7 +332,8 @@ const memberSelect = (userId) => `
          m.user_id IS NOT NULL AS has_account, m.user_id IS ${Number(userId)} AS is_me, m.is_admin,
          (SELECT GROUP_CONCAT(mi.instrument_id) FROM member_instruments mi WHERE mi.member_id = m.id) AS secondary_ids
   FROM band_members m
-  LEFT JOIN instruments i ON i.id = m.instrument_id`;
+  LEFT JOIN instruments i ON i.id = m.instrument_id
+  LEFT JOIN band_instruments bi ON bi.band_id = m.band_id AND bi.instrument_id = m.instrument_id`;
 
 const toMember = (m) => {
   if (!m) return m;
@@ -273,13 +346,13 @@ const toMember = (m) => {
 
 // Replaces a member's secondary instruments (when `ids` is given) and keeps the rule that the
 // primary instrument is never also a secondary.
-function saveSecondaryInstruments(memberId, primaryId, ids) {
+function saveSecondaryInstruments(memberId, bandId, primaryId, ids) {
   if (ids !== undefined) {
     if (!Array.isArray(ids)) throw new HttpError(400, 'secondary_instrument_ids must be a list');
     const unique = [...new Set(ids.map(Number))].filter((id) => id !== primaryId);
     for (const id of unique) {
       if (!Number.isInteger(id)) throw new HttpError(400, 'Unknown instrument');
-      findOr404('SELECT id FROM instruments WHERE id = ?', id, 'Instrument');
+      validInstrumentId(id, bandId);
     }
     db.prepare('DELETE FROM member_instruments WHERE member_id = ?').run(memberId);
     const insert = db.prepare('INSERT INTO member_instruments (member_id, instrument_id) VALUES (?, ?)');
@@ -293,23 +366,23 @@ function saveSecondaryInstruments(memberId, primaryId, ids) {
 app.get('/api/bands/:bandId/members', (req, res) => {
   const me = requireMember(req, req.params.bandId);
   res.json(
-    db.prepare(`${memberSelect(req.user.id)} WHERE m.band_id = ? ORDER BY COALESCE(i.sort_order, 9999), m.name`)
+    db.prepare(`${memberSelect(req.user.id)} WHERE m.band_id = ? ORDER BY COALESCE(bi.sort_order, 9999), m.name`)
       .all(me.band_id).map(toMember)
   );
 });
 
-function validateMember(body) {
+function validateMember(body, bandId) {
   const name = clean(body.name);
   if (!name) throw new HttpError(400, 'Member name is required');
   const email = clean(body.email);
   if (email && !EMAIL_RE.test(email)) throw new HttpError(400, `"${email}" doesn't look like an email address`);
-  return { name, email, instrumentId: validInstrumentId(body.instrument_id) };
+  return { name, email, instrumentId: validInstrumentId(body.instrument_id, bandId) };
 }
 
 // Adds a member profile without an account (e.g. a sub). They can claim it later via the invite link.
 app.post('/api/bands/:bandId/members', (req, res) => {
   const me = requireMember(req, req.params.bandId);
-  const { name, email, instrumentId } = validateMember(req.body);
+  const { name, email, instrumentId } = validateMember(req.body, me.band_id);
   const { lastInsertRowid } = db
     .prepare('INSERT INTO band_members (band_id, name, email, instrument_id) VALUES (?, ?, ?, ?)')
     .run(me.band_id, name, email, instrumentId);
@@ -329,12 +402,12 @@ function requireSameBand(req, memberId) {
 
 app.put('/api/members/:memberId', (req, res) => {
   const target = requireSameBand(req, req.params.memberId);
-  const { name, email, instrumentId } = validateMember(req.body);
+  const { name, email, instrumentId } = validateMember(req.body, target.band_id);
   // secondary_instrument_ids: omitted keeps the current list; [] clears it.
   db.transaction(() => {
     db.prepare('UPDATE band_members SET name = ?, email = ?, instrument_id = ? WHERE id = ?')
       .run(name, email, instrumentId, target.id);
-    saveSecondaryInstruments(target.id, instrumentId, req.body.secondary_instrument_ids);
+    saveSecondaryInstruments(target.id, target.band_id, instrumentId, req.body.secondary_instrument_ids);
   })();
   res.json(toMember(db.prepare(`${memberSelect(req.user.id)} WHERE m.id = ?`).get(target.id)));
 });
@@ -435,13 +508,14 @@ app.get('/api/bands/:bandId/events', (req, res) => {
   // grouped by the instrument they're playing. Within an instrument: yes, iffy, no response, no.
   const attendance = db.prepare(`
     SELECT e.id AS event_id, a.status, a.iffy_reason, m.id, m.name,
-           i.id AS instrument_id, i.name AS instrument, i.sort_order
+           i.id AS instrument_id, i.name AS instrument, bi.sort_order
     FROM events e
     JOIN band_members m ON m.band_id = e.band_id
     LEFT JOIN event_attendance a ON a.event_id = e.id AND a.member_id = m.id
     LEFT JOIN instruments i ON i.id = COALESCE(a.instrument_id, m.instrument_id)
+    LEFT JOIN band_instruments bi ON bi.band_id = e.band_id AND bi.instrument_id = i.id
     WHERE e.band_id = @bandId AND ${dateFilter}
-    ORDER BY COALESCE(i.sort_order, 9999), i.name,
+    ORDER BY COALESCE(bi.sort_order, 9999), i.name,
              CASE a.status WHEN 'yes' THEN 0 WHEN 'iffy' THEN 1 WHEN 'no' THEN 3 ELSE 2 END, m.name
   `).all({ bandId: me.band_id, today });
   const byEvent = new Map();
@@ -450,6 +524,7 @@ app.get('/api/bands/:bandId/events', (req, res) => {
     byEvent.get(row.event_id).push(row);
   }
   const plays = instrumentsPlayed(me.band_id);
+  const requirements = quorumRequirements(me.band_id);
   const shape = ({ id, name, instrument, status, iffy_reason, secondary }) =>
     ({ id, name, instrument, status, iffy_reason, ...(secondary ? { secondary: true } : {}) });
 
@@ -464,7 +539,7 @@ app.get('/api/bands/:bandId/events', (req, res) => {
       // Main entries plus (Name) entries in the other sections each member also plays.
       attendees: withSecondaryEntries(main, plays).map(shape),
       // Counts and quorum use main entries only: a player counts once, for what they're playing.
-      quorum: quorumFor(main),
+      quorum: quorumFor(main, requirements),
     };
   }));
 });
@@ -472,11 +547,14 @@ app.get('/api/bands/:bandId/events', (req, res) => {
 // Every instrument each member of a band plays (primary + secondaries): Map(memberId -> [{ id, name, sort_order }]).
 function instrumentsPlayed(bandId) {
   const rows = db.prepare(`
-    SELECT m.id AS member_id, i.id, i.name, i.sort_order
-    FROM band_members m JOIN instruments i ON i.id = m.instrument_id WHERE m.band_id = @band
+    SELECT m.id AS member_id, i.id, i.name, bi.sort_order
+    FROM band_members m JOIN instruments i ON i.id = m.instrument_id
+    LEFT JOIN band_instruments bi ON bi.band_id = m.band_id AND bi.instrument_id = i.id
+    WHERE m.band_id = @band
     UNION
-    SELECT mi.member_id, i.id, i.name, i.sort_order
+    SELECT mi.member_id, i.id, i.name, bi.sort_order
     FROM member_instruments mi JOIN band_members m ON m.id = mi.member_id JOIN instruments i ON i.id = mi.instrument_id
+    LEFT JOIN band_instruments bi ON bi.band_id = m.band_id AND bi.instrument_id = i.id
     WHERE m.band_id = @band
   `).all({ band: bandId });
   const map = new Map();
@@ -523,14 +601,15 @@ function getEvent(eventId) {
   if (!event) throw new HttpError(404, 'Event not found');
 
   const members = db.prepare(`
-    SELECT m.id, m.name, i.id AS instrument_id, i.name AS instrument, i.sort_order, a.status, a.iffy_reason, a.updated_at,
+    SELECT m.id, m.name, i.id AS instrument_id, i.name AS instrument, bi.sort_order, a.status, a.iffy_reason, a.updated_at,
            a.instrument_id AS event_instrument_id, p.name AS primary_instrument
     FROM band_members m
     LEFT JOIN event_attendance a ON a.member_id = m.id AND a.event_id = ?
     LEFT JOIN instruments i ON i.id = COALESCE(a.instrument_id, m.instrument_id)
     LEFT JOIN instruments p ON p.id = m.instrument_id
+    LEFT JOIN band_instruments bi ON bi.band_id = m.band_id AND bi.instrument_id = i.id
     WHERE m.band_id = ?
-    ORDER BY COALESCE(i.sort_order, 9999), i.name, m.name
+    ORDER BY COALESCE(bi.sort_order, 9999), i.name, m.name
   `).all(eventId, event.band_id);
 
   // Yes responders by the instrument they're playing, plus (Name) entries in the other sections
@@ -554,7 +633,7 @@ function getEvent(eventId) {
     ...event,
     // Start/end for "Add to calendar" (UTC, or dates for all-day events).
     calendar: eventTimes(event, event.band_timezone),
-    quorum: quorumFor(members),
+    quorum: quorumFor(members, quorumRequirements(event.band_id)),
     attendance: {
       going_by_instrument: goingByInstrument,
       iffy: members.filter((m) => m.status === 'iffy')
@@ -691,7 +770,7 @@ app.put('/api/events/:eventId/rsvp', (req, res) => {
   // instrument_id: omitted keeps the existing choice; null (or their primary) means "my usual instrument".
   const setInstrument = 'instrument_id' in req.body;
   let instrumentId = req.body.instrument_id ? Number(req.body.instrument_id) : null;
-  if (instrumentId) findOr404('SELECT id FROM instruments WHERE id = ?', instrumentId, 'Instrument');
+  if (instrumentId) validInstrumentId(instrumentId, event.band_id);
   if (instrumentId === member.instrument_id) instrumentId = null;
 
   // iffy_reason (Iffy only): omitted keeps the existing reason; empty/null clears it.

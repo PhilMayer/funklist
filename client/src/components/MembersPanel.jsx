@@ -2,11 +2,11 @@ import { useEffect, useState } from 'react';
 import { api } from '../api';
 import TimeZoneSetting from './TimeZoneSetting';
 import SecondaryPicker from './SecondaryPicker';
+import BandInstruments from './BandInstruments';
 
-const NEW_INSTRUMENT = '__new__';
 
 export default function MembersPanel({
-  bandId, members, instruments, setInstruments, onChanged, onLeft, onError,
+  bandId, members, instruments, setInstruments, isAdmin, onChanged, onLeft, onError,
 }) {
   const [name, setName] = useState('');
   const [instrumentId, setInstrumentId] = useState('');
@@ -45,14 +45,8 @@ export default function MembersPanel({
     }
   }
 
-  async function resolveInstrument(value) {
-    if (value !== NEW_INSTRUMENT) return value || null;
-    const instName = window.prompt('New instrument name');
-    if (!instName?.trim()) return null;
-    const inst = await api.addInstrument(instName);
-    setInstruments((list) => (list.some((i) => i.id === inst.id) ? list : [...list, inst]));
-    return inst.id;
-  }
+  // Instruments come from the band's list (edited under "Instruments and quorum").
+  const resolveInstrument = (value) => (value ? Number(value) : null);
 
   async function handleAdd(e) {
     e.preventDefault();
@@ -136,7 +130,6 @@ export default function MembersPanel({
     <>
       <option value="">No instrument</option>
       {instruments.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}
-      <option value={NEW_INSTRUMENT}>+ Add instrument…</option>
     </>
   );
 
@@ -163,6 +156,13 @@ export default function MembersPanel({
       </div>
 
       <TimeZoneSetting bandId={bandId} timezone={timezone} onSaved={setTimezone} onError={onError} />
+      <BandInstruments
+        bandId={bandId}
+        instruments={instruments}
+        isAdmin={isAdmin}
+        onSaved={(list) => { setInstruments(list); onChanged(); }}
+        onError={onError}
+      />
 
       <p className="muted small-text add-member-hint">
         Add someone who isn’t on Funklist yet (like a sub). They can claim the profile later through the invite link.

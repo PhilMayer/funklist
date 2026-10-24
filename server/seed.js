@@ -2,7 +2,7 @@
 // first member. Safe to re-run: each part is skipped if it already exists.
 const crypto = require('crypto');
 const db = require('./db');
-const { newInviteCode } = require('./db');
+const { newInviteCode, addDefaultInstruments } = require('./db');
 
 const BAND = 'The Funklist';
 // Local development only. Override with DEMO_PASSWORD=... npm run seed
@@ -51,6 +51,7 @@ const isoDate = (daysFromNow) => {
 db.transaction(() => {
   const bandId = db.prepare('INSERT INTO bands (name, invite_code, timezone) VALUES (?, ?, ?)')
     .run(BAND, newInviteCode(), Intl.DateTimeFormat().resolvedOptions().timeZone).lastInsertRowid;
+  addDefaultInstruments(bandId);
 
   const members = [
     ['Aretha', 'Vocals'], ['Bootsy', 'Tubas'], ['Clyde', 'Percussion'], ['Maceo', 'Saxophones'],

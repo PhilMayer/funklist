@@ -5,7 +5,7 @@ const NEW = 'new';
 
 // Reached from an invite link (?join=CODE). Lets you claim an existing member profile
 // (keeping its RSVP history) or join as a new member.
-export default function JoinBand({ code, user, instruments, onJoined, onCancel }) {
+export default function JoinBand({ code, user, onJoined, onCancel }) {
   const [invite, setInvite] = useState(null);
   const [error, setError] = useState('');
   const [choice, setChoice] = useState(NEW);
@@ -91,7 +91,7 @@ export default function JoinBand({ code, user, instruments, onJoined, onCancel }
             <span className="label">Instrument</span>
             <select value={instrumentId} onChange={(e) => setInstrumentId(e.target.value)}>
               <option value="">Choose…</option>
-              {instruments.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}
+              {invite.instruments.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}
             </select>
           </label>
         </div>

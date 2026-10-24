@@ -45,6 +45,16 @@ CREATE TABLE IF NOT EXISTS instruments (
   sort_order  INTEGER NOT NULL DEFAULT 100
 );
 
+-- Each band's own instrument list, in display order, with the minimum number of Yes RSVPs per
+-- instrument for an event to have quorum (0 = not required).
+CREATE TABLE IF NOT EXISTS band_instruments (
+  band_id        INTEGER NOT NULL REFERENCES bands(id) ON DELETE CASCADE,
+  instrument_id  INTEGER NOT NULL REFERENCES instruments(id) ON DELETE CASCADE,
+  sort_order     INTEGER NOT NULL DEFAULT 0,
+  min_count      INTEGER NOT NULL DEFAULT 0 CHECK (min_count >= 0),
+  PRIMARY KEY (band_id, instrument_id)
+);
+
 CREATE TABLE IF NOT EXISTS band_members (
   id             INTEGER PRIMARY KEY AUTOINCREMENT,
   band_id        INTEGER NOT NULL REFERENCES bands(id) ON DELETE CASCADE,

@@ -72,13 +72,47 @@ db.prepare(`
   WHERE email IS NULL AND user_id IS NOT NULL
 `).run();
 
+// The lineup new bands start with (editable when creating the band), and its quorum minimums.
 const DEFAULT_INSTRUMENTS = [
-  'Vocals', 'Percussion', 'Trumpets', 'Midhorns', 'Saxophones', 'Tubas', 'Dance Team'
+  { name: 'Vocals', min_count: 1 },
+  { name: 'Percussion', min_count: 2 },
+  { name: 'Trumpets', min_count: 2 },
+  { name: 'Midhorns', min_count: 2 },
+  { name: 'Saxophones', min_count: 2 },
+  { name: 'Tubas', min_count: 1 },
+  { name: 'Dance Team', min_count: 0 },
 ];
 const insertInstrument = db.prepare(
   'INSERT OR IGNORE INTO instruments (name, sort_order) VALUES (?, ?)'
 );
-DEFAULT_INSTRUMENTS.forEach((name, i) => insertInstrument.run(name, i));
+DEFAULT_INSTRUMENTS.forEach(({ name }, i) => insertInstrument.run(name, i));
+
+// Gives a band the default lineup, plus any other instruments its members already play (no minimum).
+function addDefaultInstruments(bandId) {
+  const add = db.prepare(`
+    INSERT OR IGNORE INTO band_instruments (band_id, instrument_id, sort_order, min_count)
+    SELECT ?, id, ?, ? FROM instruments WHERE name = ?
+  `);
+  DEFAULT_INSTRUMENTS.forEach(({ name, min_count: min }, i) => add.run(bandId, i, min, name));
+  const extras = db.prepare(`
+    SELECT DISTINCT i.id FROM instruments i
+    WHERE i.id IN (
+      SELECT instrument_id FROM band_members WHERE band_id = @band
+      UNION SELECT mi.instrument_id FROM member_instruments mi JOIN band_members m ON m.id = mi.member_id WHERE m.band_id = @band
+    ) AND i.id NOT IN (SELECT instrument_id FROM band_instruments WHERE band_id = @band)
+    ORDER BY i.sort_order, i.name
+  `).all({ band: bandId });
+  extras.forEach(({ id }, i) => db.prepare(
+    'INSERT INTO band_instruments (band_id, instrument_id, sort_order, min_count) VALUES (?, ?, ?, 0)'
+  ).run(bandId, id, DEFAULT_INSTRUMENTS.length + i));
+}
+
+// Bands from before per-band instruments get the lineup and minimums that used to apply to everyone.
+for (const { id } of db.prepare(
+  'SELECT id FROM bands WHERE id NOT IN (SELECT DISTINCT band_id FROM band_instruments)'
+).all()) addDefaultInstruments(id);
 
 module.exports = db;
 module.exports.newInviteCode = newInviteCode;
+module.exports.DEFAULT_INSTRUMENTS = DEFAULT_INSTRUMENTS;
+module.exports.addDefaultInstruments = addDefaultInstruments;

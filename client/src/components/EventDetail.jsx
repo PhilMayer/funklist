@@ -79,7 +79,7 @@ export default function EventDetail({ eventId, me, members = [], instruments, on
   }
 
   async function changeStatus(status) {
-    const quorumNote = event.quorum.met
+    const quorumNote = event.quorum.met || !event.quorum.applicable
       ? ''
       : `It doesn’t have quorum yet (still needed: ${event.quorum.needed.map((n) => `${n.count} ${n.label}`).join(', ')}).\n\n`;
     const question = {
@@ -252,7 +252,7 @@ function StatusBar({ event, canChange, saving, onChange }) {
   const by = [event.status_updated_by_name && `by ${event.status_updated_by_name}`, changedOn(event.status_updated_at)]
     .filter(Boolean).join(' on ');
   const status = {
-    unconfirmed: { label: 'Not confirmed yet', note: event.quorum.met ? 'Quorum reached' : null },
+    unconfirmed: { label: 'Not confirmed yet', note: event.quorum.applicable && event.quorum.met ? 'Quorum reached' : null },
     confirmed: { label: '✓ Confirmed', note: by },
     cancelled: { label: 'Cancelled', note: `${by ? `${by}. ` : ''}It’s hidden from the events list.` },
   }[event.status];

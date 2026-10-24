@@ -462,3 +462,19 @@ button.link.inline { margin: 0; font-size: inherit; text-decoration: underline; 
 .account-section h2 { margin: 0; }
 .account-section .row input { flex: 1; min-width: 12rem; }
 .account > .link { justify-self: start; }
+
+/* Band instruments and quorum */
+.instruments-editor { display: grid; gap: 0.5rem; }
+.instruments-editor-head, .instruments-editor li { display: grid; grid-template-columns: 1fr 7rem auto; gap: 0.5rem; align-items: center; }
+.instruments-editor-head { font-size: 0.75rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.instruments-editor ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.4rem; }
+.instruments-editor input { min-width: 0; }
+.instruments-editor-actions { display: flex; gap: 0.25rem; }
+.instruments-editor > .ghost.small { justify-self: start; }
+.band-instruments { display: grid; gap: 0.5rem; }
+.band-instruments-head { display: flex; align-items: center; gap: 0.75rem; }
+.band-instruments .form-actions { margin-top: 0.5rem; }
+@media (max-width: 700px) {
+  .instruments-editor-head, .instruments-editor li { grid-template-columns: 1fr 4.5rem; }
+  .instruments-editor-actions { grid-column: 1 / -1; justify-content: flex-end; }
+}

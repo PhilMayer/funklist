@@ -28,14 +28,20 @@ test('formatTime12', () => {
   assert.equal(formatTime12(null), null);
 });
 
-test('quorum counts only Yes, per instrument', () => {
-  const y = (instrument, n, status = 'yes') => Array.from({ length: n }, () => ({ instrument, status }));
-  const full = [...y('Vocals', 1), ...y('Percussion', 2), ...y('Trumpets', 2), ...y('Midhorns', 2), ...y('Saxophones', 2), ...y('Tubas', 1)];
-  assert.equal(quorumFor(full).met, true);
-  const noTuba = quorumFor([...full.slice(0, -1), ...y('Trumpets', 5)]);
-  assert.equal(noTuba.met, false);
-  assert.deepEqual(noTuba.needed.map((n) => `${n.count} ${n.label}`), ['1 tuba']);
-  assert.equal(quorumFor([...full.slice(1), ...y('Vocals', 1, 'iffy')]).total_needed, 1);
+test("quorum uses the band's minimums, counting only Yes per instrument", () => {
+  const reqs = [
+    { instrument_id: 1, name: 'Vocals', min_count: 1 }, { instrument_id: 2, name: 'Trumpets', min_count: 2 },
+    { instrument_id: 3, name: 'Tubas', min_count: 1 }, { instrument_id: 4, name: 'Dance Team', min_count: 0 },
+  ];
+  const y = (id, n, status = 'yes') => Array.from({ length: n }, () => ({ instrument_id: id, status }));
+  const full = [...y(1, 1), ...y(2, 2), ...y(3, 1)];
+  assert.deepEqual(quorumFor(full, reqs), { applicable: true, met: true, total_needed: 0, needed: [] });
+  const noTuba = quorumFor([...y(1, 1), ...y(2, 7)], reqs);
+  assert.deepEqual(noTuba.needed.map((n) => `${n.count} ${n.label}`), ['1 tuba'], 'extra trumpets don’t cover a tuba');
+  assert.equal(quorumFor([...y(1, 1, 'iffy'), ...y(2, 2), ...y(3, 1)], reqs).total_needed, 1, 'iffy doesn’t count');
+  assert.deepEqual(quorumFor(full, [{ instrument_id: 9, name: 'Kazoo', min_count: 0 }]).applicable, false, 'no minimums: not applicable');
+  assert.equal(quorumFor([], [{ instrument_id: 2, name: 'Trumpets', min_count: 2 }]).needed[0].label, 'trumpets');
+  assert.equal(quorumFor([], [{ instrument_id: 5, name: 'Bass', min_count: 1 }]).needed[0].label, 'bass');
 });
 
 test('calendar times: call to 2h after hit, all-day without times, after-midnight hit', () => {

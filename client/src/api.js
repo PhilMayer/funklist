@@ -24,14 +24,19 @@ export const api = {
   changePassword: (current, next) => request('POST', '/auth/password', { current_password: current, new_password: next }),
   updateAccount: (fields) => request('PUT', '/auth/account', fields),
 
-  instruments: () => request('GET', '/instruments'),
-  addInstrument: (name) => request('POST', '/instruments', { name }),
+  // The lineup the create-band form starts from: [{ name, min_count }].
+  instrumentDefaults: () => request('GET', '/instruments/defaults'),
+  // A band's instruments in order, with quorum minimums: [{ id, name, min_count }].
+  bandInstruments: (bandId) => request('GET', `/bands/${bandId}/instruments`),
+  saveBandInstruments: (bandId, instruments) => request('PUT', `/bands/${bandId}/instruments`, { instruments }),
 
   bands: () => request('GET', '/bands'),
   // New bands use the creator's browser time zone (changeable later on the Members tab).
-  createBand: (name, instrumentId) => request('POST', '/bands', {
+  // instruments: [{ name, min_count }] in order; instrumentName: the creator's (one of those names).
+  createBand: (name, instruments, instrumentName) => request('POST', '/bands', {
     name,
-    instrument_id: instrumentId || null,
+    instruments,
+    instrument_name: instrumentName || null,
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
   }),
   band: (id) => request('GET', `/bands/${id}`),
