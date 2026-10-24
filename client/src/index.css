@@ -452,3 +452,13 @@ button.link.inline { margin: 0; font-size: inherit; text-decoration: underline; 
   /* The Members table scrolls sideways, which would clip a dropdown: pin the checklist to the screen. */
   .checklist { left: 16px; right: 16px; top: auto; bottom: 16px; min-width: 0; }
 }
+
+/* Password reset and account */
+.auth-title { font-size: 1.2rem; text-align: center; margin: 0; }
+.forgot-link { justify-self: center; font-size: 0.85rem; }
+.auth-form .link.inline { justify-self: center; }
+.account { max-width: 560px; }
+.account-section { display: grid; gap: 0.6rem; padding-top: 1rem; border-top: 1px solid var(--border); }
+.account-section h2 { margin: 0; }
+.account-section .row input { flex: 1; min-width: 12rem; }
+.account > .link { justify-self: start; }

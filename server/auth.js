@@ -4,6 +4,7 @@ const express = require('express');
 const { OAuth2Client } = require('google-auth-library');
 const db = require('./db');
 const { HttpError, clean } = require('./errors');
+const { sendMail } = require('./mailer');
 
 const scrypt = promisify(crypto.scrypt);
 
@@ -21,6 +22,16 @@ const USERNAME_RE = /^[a-zA-Z0-9_.-]{3,32}$/;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MIN_PASSWORD = 8;
 const MAX_PASSWORD = 200;
+const RESET_MINUTES = 60;
+
+function checkNewPassword(password) {
+  if (typeof password !== 'string' || password.length < MIN_PASSWORD || password.length > MAX_PASSWORD) {
+    throw new HttpError(400, `Password must be ${MIN_PASSWORD}–${MAX_PASSWORD} characters`);
+  }
+}
+
+// Base URL for links in emails (APP_URL in production).
+const appUrl = (req) => (process.env.APP_URL || `${req.protocol}://${req.get('host')}`).replace(/\/$/, '');
 
 // ---------- Passwords (scrypt, built into Node) ----------
 
@@ -73,7 +84,7 @@ function endSession(req, res) {
   res.clearCookie(SESSION_COOKIE, { path: '/' });
 }
 
-const USER_FIELDS = 'u.id, u.username, u.email, u.display_name, u.google_sub IS NOT NULL AS has_google';
+const USER_FIELDS = 'u.id, u.username, u.email, u.display_name, u.google_sub IS NOT NULL AS has_google, u.password_hash IS NOT NULL AS has_password';
 
 // Sets req.user when the request carries a valid session cookie.
 function loadUser(req, res, next) {
@@ -98,6 +109,7 @@ const publicUser = (u) => ({
   email: u.email,
   display_name: u.display_name,
   has_google: Boolean(u.has_google),
+  has_password: Boolean(u.has_password),
 });
 const getUser = (id) => publicUser(db.prepare(`SELECT ${USER_FIELDS} FROM users u WHERE u.id = ?`).get(id));
 
@@ -138,9 +150,7 @@ router.post('/register', rateLimit, async (req, res) => {
   if (!username || !USERNAME_RE.test(username)) {
     throw new HttpError(400, 'Username must be 3–32 characters: letters, numbers, dot, dash, or underscore');
   }
-  if (password.length < MIN_PASSWORD || password.length > MAX_PASSWORD) {
-    throw new HttpError(400, `Password must be at least ${MIN_PASSWORD} characters`);
-  }
+  checkNewPassword(password);
   if (email && !EMAIL_RE.test(email)) throw new HttpError(400, `"${email}" doesn't look like an email address`);
   if (db.prepare('SELECT 1 FROM users WHERE username = ?').get(username)) {
     throw new HttpError(409, 'That username is taken');
@@ -183,6 +193,117 @@ router.post('/google', rateLimit, async (req, res) => {
   }
   startSession(res, userId);
   res.status(existing ? 200 : 201).json({ user: getUser(userId) });
+});
+
+// ---------- Password reset ----------
+
+function sendResetEmail(req, user, token) {
+  const link = `${appUrl(req)}/?reset=${token}`;
+  return sendMail({
+    to: user.email,
+    subject: 'Reset your Funklist password',
+    text: [
+      `Hi ${user.display_name},`,
+      '',
+      `Someone (hopefully you) asked to reset the password for your Funklist account "${user.username}".`,
+      `Choose a new password here within ${RESET_MINUTES} minutes:`,
+      link,
+      '',
+      'If you didn’t ask for this, you can ignore this email; your password won’t change.',
+    ].join('\n'),
+  });
+}
+
+function sendGoogleOnlyEmail(user) {
+  return sendMail({
+    to: user.email,
+    subject: 'Signing in to Funklist',
+    text: [
+      `Hi ${user.display_name},`,
+      '',
+      'Someone asked to reset the password for the Funklist account with this email address.',
+      'That account signs in with Google, so there is no Funklist password to reset: use "Continue with Google" on the sign-in page.',
+    ].join('\n'),
+  });
+}
+
+// Always answers the same way, whether or not an account matches, so it can't be used to find accounts.
+// Only the account's own email is used (not band member profile emails, which bandmates can edit).
+router.post('/forgot', rateLimit, (req, res) => {
+  const identifier = clean(req.body.identifier) || '';
+  db.prepare("DELETE FROM password_resets WHERE expires_at < datetime('now')").run();
+  const users = identifier.includes('@')
+    ? db.prepare('SELECT * FROM users WHERE email = ? COLLATE NOCASE').all(identifier)
+    : db.prepare('SELECT * FROM users WHERE username = ?').all(identifier);
+  for (const user of users.filter((u) => u.email)) {
+    let sending;
+    if (user.password_hash) {
+      const token = crypto.randomBytes(32).toString('base64url');
+      db.transaction(() => {
+        // A new link replaces any earlier unused one.
+        db.prepare('DELETE FROM password_resets WHERE user_id = ? AND used_at IS NULL').run(user.id);
+        db.prepare(`INSERT INTO password_resets (token_hash, user_id, expires_at) VALUES (?, ?, datetime('now', ?))`)
+          .run(sha256(token), user.id, `+${RESET_MINUTES} minutes`);
+      })();
+      sending = sendResetEmail(req, user, token);
+    } else {
+      sending = sendGoogleOnlyEmail(user);
+    }
+    // Not awaited, so the response time doesn't depend on whether an account matched.
+    sending.catch((err) => console.error(`Password reset email for user ${user.id} failed: ${err.message}`));
+  }
+  res.json({ ok: true });
+});
+
+// Sets a new password from an emailed link, signs the account out everywhere else, and signs in here.
+router.post('/reset', rateLimit, async (req, res) => {
+  const token = typeof req.body.token === 'string' ? req.body.token : '';
+  const reset = db.prepare(`
+    SELECT token_hash, user_id FROM password_resets
+    WHERE token_hash = ? AND used_at IS NULL AND expires_at > datetime('now')
+  `).get(sha256(token));
+  if (!reset) throw new HttpError(400, 'This reset link is invalid or has expired. Request a new one from the sign-in page.');
+  checkNewPassword(req.body.password);
+  const passwordHash = await hashPassword(req.body.password);
+  db.transaction(() => {
+    db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(passwordHash, reset.user_id);
+    db.prepare("UPDATE password_resets SET used_at = datetime('now') WHERE token_hash = ?").run(reset.token_hash);
+    db.prepare('DELETE FROM password_resets WHERE user_id = ? AND used_at IS NULL').run(reset.user_id);
+    db.prepare('DELETE FROM sessions WHERE user_id = ?').run(reset.user_id);
+  })();
+  startSession(res, reset.user_id);
+  res.json({ user: getUser(reset.user_id) });
+});
+
+// ---------- Account settings (signed in) ----------
+
+// Change password: needs the current one. Other devices are signed out; this one stays signed in.
+router.post('/password', requireUser, async (req, res) => {
+  const user = db.prepare('SELECT id, password_hash FROM users WHERE id = ?').get(req.user.id);
+  if (!user.password_hash) throw new HttpError(400, 'This account signs in with Google, so it has no Funklist password');
+  const current = typeof req.body.current_password === 'string' ? req.body.current_password.slice(0, MAX_PASSWORD) : '';
+  if (!(await verifyPassword(current, user.password_hash))) throw new HttpError(400, 'Your current password is incorrect');
+  checkNewPassword(req.body.new_password);
+  const passwordHash = await hashPassword(req.body.new_password);
+  const currentToken = sha256(parseCookies(req.headers.cookie)[SESSION_COOKIE] || '');
+  db.transaction(() => {
+    db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(passwordHash, user.id);
+    db.prepare('DELETE FROM sessions WHERE user_id = ? AND token_hash != ?').run(user.id, currentToken);
+    db.prepare('DELETE FROM password_resets WHERE user_id = ?').run(user.id);
+  })();
+  res.json({ user: getUser(user.id) });
+});
+
+// Account email (used for password resets). Also fills band member profiles that have no email,
+// so event notifications reach this person too.
+router.put('/account', requireUser, (req, res) => {
+  const email = clean(req.body.email);
+  if (email && !EMAIL_RE.test(email)) throw new HttpError(400, `"${email}" doesn't look like an email address`);
+  db.transaction(() => {
+    db.prepare('UPDATE users SET email = ? WHERE id = ?').run(email, req.user.id);
+    if (email) db.prepare('UPDATE band_members SET email = ? WHERE user_id = ? AND email IS NULL').run(email, req.user.id);
+  })();
+  res.json({ user: getUser(req.user.id) });
 });
 
 router.post('/logout', (req, res) => {

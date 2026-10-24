@@ -22,6 +22,15 @@ CREATE TABLE IF NOT EXISTS sessions (
 );
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 
+-- Password reset links. Only a SHA-256 of the emailed token is stored; single use, short-lived.
+CREATE TABLE IF NOT EXISTS password_resets (
+  token_hash  TEXT PRIMARY KEY,
+  user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  expires_at  TEXT NOT NULL,
+  used_at     TEXT,
+  created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS bands (
   id           INTEGER PRIMARY KEY AUTOINCREMENT,
   name         TEXT NOT NULL,

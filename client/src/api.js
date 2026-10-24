@@ -19,6 +19,10 @@ export const api = {
   login: (username, password) => request('POST', '/auth/login', { username, password }),
   googleLogin: (credential) => request('POST', '/auth/google', { credential }),
   logout: () => request('POST', '/auth/logout'),
+  forgotPassword: (identifier) => request('POST', '/auth/forgot', { identifier }),
+  resetPassword: (token, password) => request('POST', '/auth/reset', { token, password }),
+  changePassword: (current, next) => request('POST', '/auth/password', { current_password: current, new_password: next }),
+  updateAccount: (fields) => request('PUT', '/auth/account', fields),
 
   instruments: () => request('GET', '/instruments'),
   addInstrument: (name) => request('POST', '/instruments', { name }),
