@@ -3,7 +3,8 @@ import { api } from '../api';
 import GoogleButton from './GoogleButton';
 
 export default function AuthPage({ googleClientId, joining, onSignedIn }) {
-  const [mode, setMode] = useState('signin'); // 'signin' | 'register'
+  const [mode, setMode] = useState('signin'); // 'signin' | 'register' | 'forgot'
+  const [resetSent, setResetSent] = useState(false);
   const [form, setForm] = useState({ username: '', password: '', display_name: '', email: '' });
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -15,6 +16,12 @@ export default function AuthPage({ googleClientId, joining, onSignedIn }) {
     setBusy(true);
     setError('');
     try {
+      if (mode === 'forgot') {
+        await api.forgotPassword(form.username);
+        setResetSent(true);
+        setBusy(false);
+        return;
+      }
       const { user } = mode === 'signin'
         ? await api.login(form.username, form.password)
         : await api.register(form);
@@ -38,7 +45,36 @@ export default function AuthPage({ googleClientId, joining, onSignedIn }) {
   const switchMode = (next) => {
     setMode(next);
     setError('');
+    setResetSent(false);
   };
+
+  if (mode === 'forgot') {
+    return (
+      <div className="auth-wrap">
+        <form className="auth-card card auth-form" onSubmit={handleSubmit}>
+          <div className="auth-brand"><span className="brand-mark">♫</span> Funklist</div>
+          <h1 className="auth-title">Reset your password</h1>
+          {resetSent ? (
+            <p role="status">
+              If an account matches, we’ve emailed it a reset link. It works once and expires in an hour.
+              Accounts without an email address can’t be reset this way; Google accounts use “Continue with Google”.
+            </p>
+          ) : (
+            <>
+              <label className="field">
+                <span className="label">Username or email</span>
+                <input value={form.username} onChange={set('username')} required autoComplete="username"
+                  autoCapitalize="none" spellCheck="false" autoFocus />
+              </label>
+              {error && <p className="form-error" role="alert">{error}</p>}
+              <button type="submit" className="primary" disabled={busy}>{busy ? 'Sending…' : 'Email me a reset link'}</button>
+            </>
+          )}
+          <button type="button" className="link inline" onClick={() => switchMode('signin')}>Back to sign in</button>
+        </form>
+      </div>
+    );
+  }
 
   return (
     <div className="auth-wrap">
@@ -119,6 +155,11 @@ export default function AuthPage({ googleClientId, joining, onSignedIn }) {
           <button type="submit" className="primary" disabled={busy}>
             {busy ? 'Please wait…' : mode === 'signin' ? 'Sign in' : 'Create account'}
           </button>
+          {mode === 'signin' && (
+            <button type="button" className="link inline forgot-link" onClick={() => switchMode('forgot')}>
+              Forgot password?
+            </button>
+          )}
         </form>
       </div>
     </div>

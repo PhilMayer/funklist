@@ -54,6 +54,5 @@ Repo: github.com/PhilMayer/funklist.
 
 ## Known issues (not yet fixed; `test.todo` in `server/test/auth.test.js`)
 - Simultaneous sign-ups for the same new username: the loser gets 500 instead of 409.
-- Password over 200 chars gets "must be at least 8 characters".
 - No max length on display names (long ones break the header) or emails.
 - Username field has no hints; punctuation-only usernames ("...") are allowed.

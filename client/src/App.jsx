@@ -7,6 +7,8 @@ import EventDetail from './components/EventDetail';
 import EventForm from './components/EventForm';
 import JoinBand from './components/JoinBand';
 import MembersPanel from './components/MembersPanel';
+import ResetPassword from './components/ResetPassword';
+import AccountSettings from './components/AccountSettings';
 import { notifiedMessage } from './messages';
 
 const load = (key) => {
@@ -17,6 +19,16 @@ const save = (key, value) => {
 };
 
 const readJoinCode = () => new URLSearchParams(window.location.search).get('join');
+// Password reset links look like /?reset=TOKEN. The token is removed from the address bar right away.
+function takeResetToken() {
+  const url = new URL(window.location.href);
+  const token = url.searchParams.get('reset');
+  if (token) {
+    url.searchParams.delete('reset');
+    window.history.replaceState(null, '', url);
+  }
+  return token;
+}
 // Links to an event (e.g. from notification emails) look like /?event=123.
 const readEventId = () => Number(new URLSearchParams(window.location.search).get('event')) || null;
 
@@ -30,6 +42,7 @@ export default function App() {
   const [user, setUser] = useState(undefined); // undefined = still checking the session
   const [googleClientId, setGoogleClientId] = useState(null);
   const [joinCode, setJoinCode] = useState(readJoinCode);
+  const [resetToken, setResetToken] = useState(takeResetToken);
 
   useEffect(() => {
     Promise.all([api.me(), api.authConfig()])
@@ -54,20 +67,36 @@ export default function App() {
   }
 
   if (user === undefined) return <div className="splash muted">Loading…</div>;
+  if (resetToken) {
+    return (
+      <ResetPassword
+        token={resetToken}
+        onDone={(u) => { setResetToken(null); setUser(u); }}
+        onCancel={() => setResetToken(null)}
+      />
+    );
+  }
   if (!user) {
     return <AuthPage googleClientId={googleClientId} joining={Boolean(joinCode)} onSignedIn={setUser} />;
   }
   return (
-    <SignedInApp key={user.id} user={user} joinCode={joinCode} onDoneJoining={doneJoining} onSignOut={signOut} />
+    <SignedInApp
+      key={user.id}
+      user={user}
+      joinCode={joinCode}
+      onDoneJoining={doneJoining}
+      onSignOut={signOut}
+      onUserUpdated={setUser}
+    />
   );
 }
 
-function SignedInApp({ user, joinCode, onDoneJoining, onSignOut }) {
+function SignedInApp({ user, joinCode, onDoneJoining, onSignOut, onUserUpdated }) {
   const [bands, setBands] = useState(null);
   const [bandId, setBandId] = useState(() => load('funklist.bandId'));
   const [members, setMembers] = useState([]);
   const [instruments, setInstruments] = useState([]);
-  // view: list | event {id} | new {template?} | edit {event} | members | create-band
+  // view: list | event {id} | new {template?} | edit {event} | members | create-band | account
   const [view, setView] = useState(() => {
     const eventId = readEventId();
     return eventId ? { name: 'event', id: eventId } : { name: 'list' };
@@ -144,6 +173,15 @@ function SignedInApp({ user, joinCode, onDoneJoining, onSignOut }) {
   if (joinCode) {
     body = (
       <JoinBand code={joinCode} user={user} instruments={instruments} onJoined={handleJoined} onCancel={onDoneJoining} />
+    );
+  } else if (view.name === 'account') {
+    body = (
+      <AccountSettings
+        user={user}
+        onUserUpdated={onUserUpdated}
+        onBack={() => setView({ name: 'list' })}
+        onError={setError}
+      />
     );
   } else if (view.name === 'create-band' || !band) {
     body = (
@@ -259,6 +297,7 @@ function SignedInApp({ user, joinCode, onDoneJoining, onSignOut }) {
               {user.display_name}
               {me?.instrument && <span className="muted"> · {me.instrument}</span>}
             </span>
+            <button className="ghost small" onClick={() => setView({ name: 'account' })}>Account</button>
             <button className="ghost small" onClick={onSignOut}>Sign out</button>
           </div>
         </div>

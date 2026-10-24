@@ -65,5 +65,9 @@ test('21st sign-up/login attempt from one address in 15 minutes is refused', asy
 
 // Known issues found in testing (see CLAUDE.md); flip to real tests when fixed.
 test.todo('two simultaneous sign-ups for the same username: the loser gets 409, not 500');
-test.todo('a password over 200 characters gets a message that mentions the maximum');
+test('a password over 200 characters gets a message that mentions the maximum', async () => {
+  const r = await register({ username: 'pwmsg', password: 'x'.repeat(201) });
+  assert.equal(r.status, 400);
+  assert.match(r.data.error, /8–200 characters/);
+});
 test.todo('display names have a maximum length');
