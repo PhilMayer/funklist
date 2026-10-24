@@ -80,7 +80,6 @@ const DEFAULT_INSTRUMENTS = [
   { name: 'Midhorns', min_count: 2 },
   { name: 'Saxophones', min_count: 2 },
   { name: 'Tubas', min_count: 1 },
-  { name: 'Dance Team', min_count: 0 },
 ];
 const insertInstrument = db.prepare(
   'INSERT OR IGNORE INTO instruments (name, sort_order) VALUES (?, ?)'
