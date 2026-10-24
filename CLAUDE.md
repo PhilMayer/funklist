@@ -12,8 +12,10 @@ Repo: github.com/PhilMayer/funklist.
     `time.js` time zones, `quorum.js` instrument minimums.
 - `client/` React 19 + Vite. One page app; views are state in `App.jsx` (no router). `?event=ID` and
   `?join=CODE` URLs are read on load.
-- Instruments are a brass band lineup (Vocals, Percussion, Trumpets, Midhorns, Saxophones, Tubas, Dance Team);
-  quorum minimums in `server/quorum.js` match instruments by name.
+- Each band has its own instrument list, order, and quorum minimums (`band_instruments`), set when the band is
+  created and editable by admins (Members tab). New bands start from `DEFAULT_INSTRUMENTS` in `server/db.js`
+  (a brass lineup). `quorumFor(attendees, requirements)` in `server/quorum.js` matches by instrument id.
+  Instrument names are shared across bands in the `instruments` table.
 
 ## Commands
 - `npm test` (root) runs the server tests: `node --test` in `server/test/`. No extra dependencies.
@@ -43,6 +45,8 @@ Repo: github.com/PhilMayer/funklist.
   `DEFAULT_TIMEZONE`, `TRUST_PROXY`. The machine auto-stops when idle (~3s cold start).
 
 ## Gotchas
+- To stop a local test server use `lsof -ti tcp:PORT -sTCP:LISTEN | xargs kill`. Without `-sTCP:LISTEN` it also
+  kills the in-app browser's network process (which resets its cookies).
 - The shell is zsh: a glob with no matches (e.g. `rm t.db*`) aborts the whole command. Quote paths or list
   files explicitly.
 - SQLite string literals use single quotes; double quotes mean identifiers.

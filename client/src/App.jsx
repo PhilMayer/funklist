@@ -113,9 +113,8 @@ function SignedInApp({ user, joinCode, onDoneJoining, onSignOut, onUserUpdated }
   );
 
   useEffect(() => {
-    Promise.all([refreshBands(), api.instruments()])
-      .then(([b, i]) => {
-        setInstruments(i);
+    refreshBands()
+      .then((b) => {
         setBandId((current) => (b.some((x) => x.id === current) ? current : b[0]?.id ?? null));
         // Opened from an event link: switch to that event's band.
         const eventId = readEventId();
@@ -153,6 +152,12 @@ function SignedInApp({ user, joinCode, onDoneJoining, onSignOut, onUserUpdated }
     refreshMembers();
   }, [bandId, bandReady, refreshMembers]);
 
+  // Each band has its own instruments (and quorum minimums).
+  useEffect(() => {
+    setInstruments([]);
+    if (bandReady) api.bandInstruments(bandId).then(setInstruments).catch((e) => setError(e.message));
+  }, [bandId, bandReady]);
+
   const me = members.find((m) => m.is_me) || null;
 
   const openBand = useCallback(async (band) => {
@@ -172,7 +177,7 @@ function SignedInApp({ user, joinCode, onDoneJoining, onSignOut, onUserUpdated }
   let body;
   if (joinCode) {
     body = (
-      <JoinBand code={joinCode} user={user} instruments={instruments} onJoined={handleJoined} onCancel={onDoneJoining} />
+      <JoinBand code={joinCode} user={user} onJoined={handleJoined} onCancel={onDoneJoining} />
     );
   } else if (view.name === 'account') {
     body = (
@@ -195,7 +200,6 @@ function SignedInApp({ user, joinCode, onDoneJoining, onSignOut, onUserUpdated }
           </div>
         )}
         <CreateBand
-          instruments={instruments}
           onCreated={openBand}
           onCancel={band ? () => setView({ name: 'list' }) : undefined}
         />
@@ -257,6 +261,7 @@ function SignedInApp({ user, joinCode, onDoneJoining, onSignOut, onUserUpdated }
             members={members}
             instruments={instruments}
             setInstruments={setInstruments}
+            isAdmin={Boolean(me?.is_admin)}
             onChanged={refreshMembers}
             onLeft={() => refreshBands().then((b) => setBandId(b[0]?.id ?? null))}
             onError={setError}

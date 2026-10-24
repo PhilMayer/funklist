@@ -183,6 +183,7 @@ const RSVP_OPTIONS = [
 
 // Replaces the RSVP counts: either "Quorum" or how many more players (and which) are needed.
 function QuorumStatus({ quorum }) {
+  if (!quorum.applicable) return null; // the band hasn't set any minimums
   if (quorum.met) {
     return (
       <div className="quorum met" title="Quorum reached: every required instrument has enough Yes RSVPs">
