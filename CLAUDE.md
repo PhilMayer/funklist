@@ -42,7 +42,9 @@ Repo: github.com/PhilMayer/funklist.
   errors, `/data/funklist.db` still present. Read production data only read-only and only what's needed
   (counts/columns), via `fly ssh console -C` with a small node script (`better-sqlite3`, `{ readonly: true }`).
 - Secrets live in Fly (`GOOGLE_CLIENT_ID`, `SMTP_*`, `MAIL_FROM`); `fly.toml` sets `APP_URL`,
-  `DEFAULT_TIMEZONE`, `TRUST_PROXY`. The machine auto-stops when idle (~3s cold start).
+  `DEFAULT_TIMEZONE`, `TRUST_PROXY`. Production email goes through Gmail SMTP from a dedicated Funklist Gmail
+  account (app password), not anyone's personal address; the address isn't in the repo.
+  The machine auto-stops when idle (~3s cold start).
 
 ## Gotchas
 - To stop a local test server use `lsof -ti tcp:PORT -sTCP:LISTEN | xargs kill`. Without `-sTCP:LISTEN` it also
