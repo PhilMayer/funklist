@@ -62,7 +62,7 @@ export default function EventList({ bandId, me, onOpen, onNew, onError }) {
 
       {showSync && <CalendarSync onClose={() => setShowSync(false)} onError={onError} />}
 
-      <EventsOverview bandId={bandId} refreshKey={events} onOpen={onOpen} onError={onError} />
+      <EventsOverview bandId={bandId} when={when} refreshKey={events} onOpen={onOpen} onError={onError} />
 
       {events?.length > 0 && (
         <div className="legend" aria-hidden="true">
