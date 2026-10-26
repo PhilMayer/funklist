@@ -19,7 +19,7 @@ const RSVP_LINES = {
 };
 
 // kind: 'created' | 'confirmed' | 'cancelled'
-function buildEmail({ kind, event, bandName, actorName, recipient, link }) {
+function buildEmail({ kind, event, bandName, actorName, recipient, link, appUrl }) {
   const type = event.type === 'gig' ? 'gig' : 'rehearsal';
   const date = formatDate(event.event_date);
   const cancelled = kind === 'cancelled';
@@ -40,6 +40,9 @@ function buildEmail({ kind, event, bandName, actorName, recipient, link }) {
     cancelled: 'Event page:',
   }[kind];
   const button = cancelled ? 'View event' : 'View event & RSVP';
+  // Says why the email came, which helps recipients (and spam filters) recognise it.
+  const footer = `You’re getting this because you’re a member of ${bandName} on Funklist. `
+    + 'To change or remove the address these emails go to, edit your email on the band’s Members tab.';
 
   // A cancellation only needs to say which event it was.
   const facts = [
@@ -62,6 +65,10 @@ function buildEmail({ kind, event, bandName, actorName, recipient, link }) {
     ...(songs.length ? ['', 'Set list:', ...songs.map((s, i) => `${i + 1}. ${s}`)] : []),
     '',
     `${closing} ${link}`,
+    '',
+    '--',
+    footer,
+    appUrl,
   ].join('\n');
 
   const pill = {
@@ -85,6 +92,7 @@ function buildEmail({ kind, event, bandName, actorName, recipient, link }) {
     <p style="margin:24px 0 8px"><a href="${escapeHtml(link)}" style="display:inline-block;background:#c2410c;color:#fff;text-decoration:none;font-weight:600;padding:10px 18px;border-radius:8px">${escapeHtml(button)}</a></p>
     <p style="margin:0;font-size:13px;color:#6f6a64">Or open: <a href="${escapeHtml(link)}" style="color:#c2410c">${escapeHtml(link)}</a></p>
   </div>
+  <p style="max-width:520px;margin:16px auto 0;font-size:12px;line-height:1.5;color:#6f6a64;text-align:center">${escapeHtml(footer)} <a href="${escapeHtml(appUrl)}" style="color:#6f6a64">Open Funklist</a></p>
 </body></html>`;
 
   return { subject, text, html };
@@ -98,7 +106,7 @@ async function notifyBand({ kind, event, bandName, actor, recipients, appUrl }) 
   let sent = 0;
   for (const recipient of recipients) {
     try {
-      const email = buildEmail({ kind, event, bandName, actorName: actor.name, recipient, link });
+      const email = buildEmail({ kind, event, bandName, actorName: actor.name, recipient, link, appUrl });
       await sendMail({ to: recipient.email, replyTo: actor.email || undefined, ...email });
       sent++;
     } catch (err) {

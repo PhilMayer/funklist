@@ -34,6 +34,9 @@ test('new events email the rest of the band, not the creator', async () => {
   await new Promise((r) => setTimeout(r, 50)); // emails send in the background
   assert.deepEqual(srv.sentMail.map((m) => m.to).sort(), ['nplayer@example.com', 'sub@example.com']);
   assert.match(srv.sentMail[0].text, /https:\/\/funklist\.test\/\?event=\d+/);
+  // The footer says why the email came and where to change the address.
+  assert.ok(srv.sentMail[0].text.includes(`member of ${band.name} on Funklist`));
+  assert.match(srv.sentMail[0].text, /Members tab\.\nhttps:\/\/funklist\.test$/);
 });
 
 test('RSVPs: own answer, Iffy reasons, and cancelled events', async () => {
