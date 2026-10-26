@@ -256,6 +256,7 @@ textarea { resize: vertical; }
 .auth-wrap { min-height: 100vh; display: grid; place-items: center; padding: 1.5rem 1rem; }
 .auth-card { width: 100%; max-width: 380px; display: grid; gap: 1rem; padding: 1.75rem; }
 .auth-brand { display: flex; align-items: center; gap: 0.5rem; font-size: 1.5rem; font-weight: 800; justify-content: center; }
+button.auth-brand { justify-self: center; padding: 0.15rem 0.5rem; }
 .auth-tagline { text-align: center; margin: -0.5rem 0 0; }
 .auth-tabs { width: 100%; }
 .auth-tabs button { flex: 1; }

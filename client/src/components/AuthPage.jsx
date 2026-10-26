@@ -2,8 +2,8 @@ import { useCallback, useState } from 'react';
 import { api } from '../api';
 import GoogleButton from './GoogleButton';
 
-export default function AuthPage({ googleClientId, joining, onSignedIn }) {
-  const [mode, setMode] = useState('signin'); // 'signin' | 'register' | 'forgot'
+export default function AuthPage({ initialMode = 'signin', googleClientId, joining, onSignedIn, onHome }) {
+  const [mode, setMode] = useState(initialMode); // 'signin' | 'register' | 'forgot'
   const [resetSent, setResetSent] = useState(false);
   const [form, setForm] = useState({ username: '', password: '', display_name: '', email: '' });
   const [error, setError] = useState('');
@@ -52,7 +52,7 @@ export default function AuthPage({ googleClientId, joining, onSignedIn }) {
     return (
       <div className="auth-wrap">
         <form className="auth-card card auth-form" onSubmit={handleSubmit}>
-          <div className="auth-brand"><span className="brand-mark">♫</span> Funklist</div>
+          <Brand onHome={onHome} />
           <h1 className="auth-title">Reset your password</h1>
           {resetSent ? (
             <p role="status">
@@ -79,9 +79,7 @@ export default function AuthPage({ googleClientId, joining, onSignedIn }) {
   return (
     <div className="auth-wrap">
       <div className="auth-card card">
-        <div className="auth-brand">
-          <span className="brand-mark">♫</span> Funklist
-        </div>
+        <Brand onHome={onHome} />
         <p className="muted auth-tagline">
           {joining ? 'Sign in or create an account to join your band.' : 'Rehearsal and gig attendance for your band.'}
         </p>
@@ -163,5 +161,16 @@ export default function AuthPage({ googleClientId, joining, onSignedIn }) {
         </form>
       </div>
     </div>
+  );
+}
+
+// The Funklist name at the top of the card; it goes back to the landing page.
+function Brand({ onHome }) {
+  const content = <><span className="brand-mark">♫</span> Funklist</>;
+  if (!onHome) return <div className="auth-brand">{content}</div>;
+  return (
+    <button type="button" className="auth-brand" onClick={onHome} title="Back to the Funklist home page">
+      {content}
+    </button>
   );
 }
