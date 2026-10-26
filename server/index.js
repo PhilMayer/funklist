@@ -463,6 +463,34 @@ function validateEvent(body) {
   };
 }
 
+// Gig captains: up to two members of the band, in the order given. Rehearsals never have captains.
+// Returns undefined when the request leaves captain_ids out (keep the current ones).
+const MAX_CAPTAINS = 2;
+function validCaptainIds(body, type, bandId) {
+  if (type !== 'gig') return [];
+  if (body.captain_ids === undefined) return undefined;
+  if (!Array.isArray(body.captain_ids)) throw new HttpError(400, 'captain_ids must be a list');
+  const ids = [...new Set(body.captain_ids.map(Number))];
+  if (ids.length > MAX_CAPTAINS) throw new HttpError(400, `A gig can have at most ${MAX_CAPTAINS} captains`);
+  const inBand = db.prepare('SELECT 1 FROM band_members WHERE id = ? AND band_id = ?');
+  for (const id of ids) {
+    if (!Number.isInteger(id) || !inBand.get(id, bandId)) throw new HttpError(400, 'Captains must be members of the band');
+  }
+  return ids;
+}
+
+function setCaptains(eventId, ids) {
+  if (ids === undefined) return;
+  db.prepare('DELETE FROM event_captains WHERE event_id = ?').run(eventId);
+  const add = db.prepare('INSERT INTO event_captains (event_id, member_id) VALUES (?, ?)');
+  for (const id of ids) add.run(eventId, id);
+}
+
+const captainsOf = (eventId) => db.prepare(`
+  SELECT m.id, m.name FROM event_captains c JOIN band_members m ON m.id = c.member_id
+  WHERE c.event_id = ? ORDER BY c.rowid
+`).all(eventId);
+
 // Compact overview of every event in the band, cancelled ones included, oldest first. `today` is
 // the band's local date so the app can tell past months from upcoming ones.
 app.get('/api/bands/:bandId/events/overview', (req, res) => {
@@ -523,6 +551,14 @@ app.get('/api/bands/:bandId/events', (req, res) => {
     if (!byEvent.has(row.event_id)) byEvent.set(row.event_id, []);
     byEvent.get(row.event_id).push(row);
   }
+  const captainIds = new Map();
+  for (const { event_id: eventId, member_id: memberId } of db.prepare(`
+    SELECT c.event_id, c.member_id FROM event_captains c JOIN events e ON e.id = c.event_id
+    WHERE e.band_id = ? ORDER BY c.rowid
+  `).all(me.band_id)) {
+    if (!captainIds.has(eventId)) captainIds.set(eventId, []);
+    captainIds.get(eventId).push(memberId);
+  }
   const plays = instrumentsPlayed(me.band_id);
   const requirements = quorumRequirements(me.band_id);
   const shape = ({ id, name, instrument, status, iffy_reason, secondary }) =>
@@ -536,6 +572,7 @@ app.get('/api/bands/:bandId/events', (req, res) => {
       iffy_count: r.iffy_count || 0,
       no_count: r.no_count || 0,
       no_response_count: main.filter((m) => !m.status).length,
+      captain_ids: captainIds.get(r.id) || [],
       // Main entries plus (Name) entries in the other sections each member also plays.
       attendees: withSecondaryEntries(main, plays).map(shape),
       // Counts and quorum use main entries only: a player counts once, for what they're playing.
@@ -634,6 +671,7 @@ function getEvent(eventId) {
     // Start/end for "Add to calendar" (UTC, or dates for all-day events).
     calendar: eventTimes(event, event.band_timezone),
     quorum: quorumFor(members, quorumRequirements(event.band_id)),
+    captains: captainsOf(event.id),
     attendance: {
       going_by_instrument: goingByInstrument,
       iffy: members.filter((m) => m.status === 'iffy')
@@ -671,7 +709,7 @@ app.get('/api/events/:eventId/calendar.ics', (req, res) => {
     .send(buildCalendar({ name: row.title, events: [row], appUrl: appUrl(req), includeRsvp: true }));
 });
 
-const createEvent = db.transaction((bandId, createdBy, e) => {
+const createEvent = db.transaction((bandId, createdBy, e, captainIds) => {
   const { lastInsertRowid: eventId } = db
     .prepare('INSERT INTO events (band_id, type, title, event_date, created_by) VALUES (?, ?, ?, ?, ?)')
     .run(bandId, e.type, e.title, e.eventDate, createdBy);
@@ -679,6 +717,7 @@ const createEvent = db.transaction((bandId, createdBy, e) => {
     INSERT INTO event_details (event_id, venue, call_time, hit_time, set_list, description)
     VALUES (?, ?, ?, ?, ?, ?)
   `).run(eventId, e.venue, e.callTime, e.hitTime, e.setList, e.description);
+  setCaptains(eventId, captainIds || []);
   return eventId;
 });
 
@@ -704,7 +743,8 @@ function emailBand(req, { kind, event, actor }) {
 // Emails the rest of the band about the new event unless the request sends notify: false.
 app.post('/api/bands/:bandId/events', (req, res) => {
   const me = requireMember(req, req.params.bandId);
-  const eventId = createEvent(me.band_id, me.id, validateEvent(req.body));
+  const e = validateEvent(req.body);
+  const eventId = createEvent(me.band_id, me.id, e, validCaptainIds(req.body, e.type, me.band_id));
   const event = getEvent(eventId);
   const emailed = req.body.notify !== false
     ? emailBand(req, { kind: 'created', event, actor: me })
@@ -726,7 +766,7 @@ app.put('/api/events/:eventId/status', (req, res) => {
   res.json({ ...updated, ...emailBand(req, { kind: status, event: updated, actor: member }) });
 });
 
-const updateEvent = db.transaction((eventId, e) => {
+const updateEvent = db.transaction((eventId, e, captainIds) => {
   db.prepare('UPDATE events SET type = ?, title = ?, event_date = ? WHERE id = ?')
     .run(e.type, e.title, e.eventDate, eventId);
   db.prepare(`
@@ -736,11 +776,13 @@ const updateEvent = db.transaction((eventId, e) => {
       venue = excluded.venue, call_time = excluded.call_time, hit_time = excluded.hit_time,
       set_list = excluded.set_list, description = excluded.description
   `).run(eventId, e.venue, e.callTime, e.hitTime, e.setList, e.description);
+  setCaptains(eventId, captainIds);
 });
 
 app.put('/api/events/:eventId', (req, res) => {
   const { event } = requireEventMember(req, req.params.eventId);
-  updateEvent(event.id, validateEvent(req.body));
+  const e = validateEvent(req.body);
+  updateEvent(event.id, e, validCaptainIds(req.body, e.type, event.band_id));
   res.json(getEvent(event.id));
 });
 

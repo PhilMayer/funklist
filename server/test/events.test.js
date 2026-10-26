@@ -112,3 +112,38 @@ test('calendar feed: secret link, valid output, reset kills the old link', async
   await boss.post('/api/me/calendar/reset');
   assert.equal((await fetch(srv.base + path)).status, 404);
 });
+
+test('gig captains: up to two band members, none for rehearsals, shown in lists and emails', async () => {
+  const { boss, player, band, subId, playerId, bossId } = await setup('cap');
+  const post = (body) => boss.post(`/api/bands/${band.id}/events`, { type: 'gig', title: 'Captained', event_date: tomorrow(), ...body });
+
+  assert.equal((await post({ captain_ids: [bossId, playerId, subId] })).status, 400, 'more than two');
+  const outsider = await setup('capx');
+  assert.equal((await post({ captain_ids: [outsider.bossId] })).status, 400, 'not in this band');
+  assert.equal((await post({ captain_ids: 'nope' })).status, 400);
+
+  srv.sentMail.length = 0;
+  const gig = (await post({ captain_ids: [playerId, bossId, playerId] })).data; // duplicates collapse
+  assert.deepEqual(gig.captains.map((c) => c.id), [playerId, bossId], 'kept in the order given');
+  await new Promise((r) => setTimeout(r, 50));
+  assert.ok(srv.sentMail.every((m) => m.text.includes(`Captains: 🧑‍✈️ ${'capplayer'}, 🧑‍✈️ capboss`)));
+
+  const list = (await player.get(`/api/bands/${band.id}/events`)).data;
+  assert.deepEqual(list.find((e) => e.id === gig.id).captain_ids, [playerId, bossId]);
+
+  // Leaving captain_ids out of an edit keeps them; [] clears them; switching to rehearsal drops them.
+  const edit = (body) => player.put(`/api/events/${gig.id}`, { type: 'gig', title: 'Captained', event_date: tomorrow(), ...body });
+  assert.equal((await edit({})).data.captains.length, 2);
+  assert.deepEqual((await edit({ captain_ids: [subId] })).data.captains.map((c) => c.name), ['Sub']);
+  assert.equal((await edit({ type: 'rehearsal' })).data.captains.length, 0);
+
+  const rehearsal = (await boss.post(`/api/bands/${band.id}/events`, {
+    type: 'rehearsal', title: 'Practice', event_date: tomorrow(), captain_ids: [bossId],
+  })).data;
+  assert.deepEqual(rehearsal.captains, []);
+
+  // Removing a member from the band removes them as captain.
+  const sole = (await post({ captain_ids: [subId] })).data;
+  assert.equal((await boss.del(`/api/members/${subId}`)).status, 204);
+  assert.deepEqual((await boss.get(`/api/events/${sole.id}`)).data.captains, []);
+});

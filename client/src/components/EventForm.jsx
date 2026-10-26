@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { api, formatDate } from '../api';
+import { MAX_CAPTAINS } from '../captains';
 
 const EMPTY = {
   type: 'rehearsal',
@@ -12,29 +13,38 @@ const EMPTY = {
   description: '',
 };
 
-// initial: the event being edited. template: an event being duplicated; its details are copied
-// into a new event, except the date (the copy needs its own) and anything RSVP-related.
-export default function EventForm({ bandId, initial, template, onCancel, onSaved }) {
+// initial: the event being edited. template: an event being duplicated; its details (captains
+// included) are copied into a new event, except the date (the copy needs its own) and anything
+// RSVP-related. members: the band, for choosing a gig's captains.
+export default function EventForm({ bandId, members = [], initial, template, onCancel, onSaved }) {
   const [form, setForm] = useState(() => {
     const source = initial || template;
     if (!source) return EMPTY;
     const copy = Object.fromEntries(Object.keys(EMPTY).map((k) => [k, source[k] ?? '']));
     return template ? { ...copy, event_date: '' } : copy;
   });
+  // One select per captain slot; '' = none.
+  const [captains, setCaptains] = useState(() => {
+    const ids = ((initial || template)?.captains || []).map((c) => String(c.id));
+    return Array.from({ length: MAX_CAPTAINS }, (_, i) => ids[i] || '');
+  });
   const [notify, setNotify] = useState(true); // new events only
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
 
+  const byName = [...members].sort((a, b) => a.name.localeCompare(b.name));
   const set = (field) => (e) => setForm((f) => ({ ...f, [field]: e.target.value }));
 
   async function handleSubmit(e) {
     e.preventDefault();
     setSaving(true);
     setError('');
+    // Rehearsals have no captains (switching a gig to a rehearsal clears them).
+    const event = { ...form, captain_ids: form.type === 'gig' ? captains.filter(Boolean).map(Number) : [] };
     try {
       const saved = initial
-        ? await api.updateEvent(initial.id, form)
-        : await api.createEvent(bandId, { ...form, notify });
+        ? await api.updateEvent(initial.id, event)
+        : await api.createEvent(bandId, { ...event, notify });
       onSaved(saved);
     } catch (err) {
       setError(err.message);
@@ -92,6 +102,28 @@ export default function EventForm({ bandId, initial, template, onCancel, onSaved
         <span className="label">Venue</span>
         <input value={form.venue} onChange={set('venue')} placeholder="Name and address" />
       </label>
+
+      {form.type === 'gig' && (
+        <fieldset className="field captains-field">
+          <legend className="label">Captains <span className="muted">(up to {MAX_CAPTAINS})</span></legend>
+          <div className="row">
+            {captains.map((value, slot) => (
+              <select
+                key={slot}
+                value={value}
+                aria-label={`Captain ${slot + 1}`}
+                onChange={(e) => setCaptains((c) => c.map((v, i) => (i === slot ? e.target.value : v)))}
+              >
+                <option value="">{slot === 0 ? 'No captain' : 'No second captain'}</option>
+                {/* Someone already picked in the other slot isn't offered again. */}
+                {byName.filter((m) => String(m.id) === value || !captains.includes(String(m.id))).map((m) => (
+                  <option key={m.id} value={m.id}>{m.name}</option>
+                ))}
+              </select>
+            ))}
+          </div>
+        </fieldset>
+      )}
 
       <label className="field">
         <span className="label">Set list <span className="muted">(one song per line)</span></span>

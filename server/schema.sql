@@ -102,6 +102,13 @@ CREATE TABLE IF NOT EXISTS event_details (
   description  TEXT
 );
 
+-- Up to two captains per gig (limit enforced in the API); rehearsals have none. Kept in the order chosen (rowid).
+CREATE TABLE IF NOT EXISTS event_captains (
+  event_id   INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+  member_id  INTEGER NOT NULL REFERENCES band_members(id) ON DELETE CASCADE,
+  PRIMARY KEY (event_id, member_id)
+);
+
 CREATE TABLE IF NOT EXISTS event_attendance (
   event_id    INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
   member_id   INTEGER NOT NULL REFERENCES band_members(id) ON DELETE CASCADE,

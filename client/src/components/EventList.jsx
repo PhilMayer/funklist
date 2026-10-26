@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api, formatDate, formatTime } from '../api';
 import IffyReasonInput from './IffyReasonInput';
+import CaptainName from './CaptainName';
+import { CAPTAIN, captainLabel } from '../captains';
 import ReasonTooltip from './ReasonTooltip';
 import CalendarSync from './CalendarSync';
 import EventsOverview from './EventsOverview';
@@ -71,6 +73,7 @@ export default function EventList({ bandId, me, onOpen, onNew, onError }) {
           <span className="pending">No response</span>
           <span className="no">Not going</span>
           <span className="muted">(Name) also plays</span>
+          {events.some((e) => e.captain_ids.length > 0) && <span className="muted">{CAPTAIN} captain</span>}
         </div>
       )}
 
@@ -110,10 +113,12 @@ export default function EventList({ bandId, me, onOpen, onNew, onError }) {
                             <li
                               key={m.id}
                               className={`${m.status || 'pending'} ${me?.id === m.id ? 'me' : ''} ${m.secondary ? 'secondary' : ''}`}
-                              title={m.iffy_reason ? undefined : `${m.name}${m.secondary ? ' (also plays)' : ''}: ${STATUS_LABELS[m.status || 'pending']}`}
+                              title={m.iffy_reason ? undefined : `${captainLabel(m.name, e.captain_ids.includes(m.id))}${m.secondary ? ' (also plays)' : ''}: ${STATUS_LABELS[m.status || 'pending']}`}
                             >
                               {m.secondary && <span aria-hidden="true">(</span>}
-                              {m.iffy_reason ? <ReasonTooltip reason={m.iffy_reason}>{m.name}</ReasonTooltip> : m.name}
+                              {m.iffy_reason
+                                ? <ReasonTooltip reason={m.iffy_reason}><CaptainName name={m.name} captain={e.captain_ids.includes(m.id)} /></ReasonTooltip>
+                                : <CaptainName name={m.name} captain={e.captain_ids.includes(m.id)} />}
                               {m.secondary && <span aria-hidden="true">)</span>}
                               {m.status === 'iffy' && <span className="iffy-mark" aria-hidden="true"> ?</span>}
                               {m.secondary && <span className="sr-only">, also plays</span>}

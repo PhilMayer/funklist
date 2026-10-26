@@ -297,6 +297,7 @@ function SignedInApp({ user, joinCode, onDoneJoining, onSignOut, onUserUpdated }
         {(view.name === 'new' || view.name === 'edit') && (
           <EventForm
             bandId={bandId}
+            members={members}
             initial={view.event}
             template={view.template}
             onCancel={() => {

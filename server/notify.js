@@ -50,6 +50,7 @@ function buildEmail({ kind, event, bandName, actorName, recipient, link, appUrl 
     ['Call time', cancelled ? null : formatTime(event.call_time)],
     ['Hit time', cancelled ? null : formatTime(event.hit_time)],
     ['Venue', event.venue],
+    ['Captains', cancelled ? null : (event.captains || []).map((c) => `🧑‍✈️ ${c.name}`).join(', ')],
   ].filter(([, v]) => v);
   const description = cancelled ? null : event.description;
   const songs = cancelled ? [] : (event.set_list || '').split('\n').map((s) => s.trim()).filter(Boolean);
