@@ -6,6 +6,7 @@ import EventList from './components/EventList';
 import EventDetail from './components/EventDetail';
 import EventForm from './components/EventForm';
 import JoinBand from './components/JoinBand';
+import Landing from './components/Landing';
 import MembersPanel from './components/MembersPanel';
 import ResetPassword from './components/ResetPassword';
 import AccountSettings from './components/AccountSettings';
@@ -38,11 +39,38 @@ const clearJoinCode = () => {
   window.history.replaceState(null, '', url);
 };
 
+// Signed-out visitors see the landing page, unless the address is /?signin or /?signup (its buttons),
+// or an invite or event link, which go straight to sign-in. null = landing page.
+function readAuthMode() {
+  const params = new URLSearchParams(window.location.search);
+  if (params.has('signup')) return 'register';
+  if (params.has('signin') || params.has('join') || params.has('event')) return 'signin';
+  return null;
+}
+// The current address with ?signin / ?signup set for `mode` ('signin' | 'register' | null for neither).
+function authModeUrl(mode) {
+  const url = new URL(window.location.href);
+  url.hash = ''; // drop the landing page's #section links
+  url.searchParams.delete('signin');
+  url.searchParams.delete('signup');
+  const flag = { signin: 'signin', register: 'signup' }[mode];
+  if (flag) url.search = url.search ? `${url.search}&${flag}` : `?${flag}`;
+  return url;
+}
+
 export default function App() {
   const [user, setUser] = useState(undefined); // undefined = still checking the session
   const [googleClientId, setGoogleClientId] = useState(null);
   const [joinCode, setJoinCode] = useState(readJoinCode);
   const [resetToken, setResetToken] = useState(takeResetToken);
+  const [authMode, setAuthMode] = useState(readAuthMode);
+
+  // Signed out (or the session expired): back to the sign-in page.
+  const showSignIn = useCallback(() => {
+    window.history.replaceState(null, '', authModeUrl('signin'));
+    setAuthMode('signin');
+    setUser(null);
+  }, []);
 
   useEffect(() => {
     Promise.all([api.me(), api.authConfig()])
@@ -51,9 +79,26 @@ export default function App() {
         setGoogleClientId(config.googleClientId);
       })
       .catch(() => setUser(null));
-    const onSignedOut = () => setUser(null);
-    window.addEventListener('funklist:signed-out', onSignedOut);
-    return () => window.removeEventListener('funklist:signed-out', onSignedOut);
+    window.addEventListener('funklist:signed-out', showSignIn);
+    // Back and Forward move between the landing page and the sign-in page.
+    const onPopState = () => setAuthMode(readAuthMode());
+    window.addEventListener('popstate', onPopState);
+    return () => {
+      window.removeEventListener('funklist:signed-out', showSignIn);
+      window.removeEventListener('popstate', onPopState);
+    };
+  }, [showSignIn]);
+
+  // Each move between the landing and sign-in pages is a history entry, so Back works.
+  const openAuthMode = useCallback((mode) => {
+    window.history.pushState(null, '', authModeUrl(mode));
+    setAuthMode(mode);
+    window.scrollTo(0, 0);
+  }, []);
+
+  const signedIn = useCallback((u) => {
+    window.history.replaceState(null, '', authModeUrl(null));
+    setUser(u);
   }, []);
 
   const doneJoining = useCallback(() => {
@@ -63,7 +108,7 @@ export default function App() {
 
   async function signOut() {
     await api.logout().catch(() => {});
-    setUser(null);
+    showSignIn();
   }
 
   if (user === undefined) return <div className="splash muted">Loading…</div>;
@@ -71,13 +116,23 @@ export default function App() {
     return (
       <ResetPassword
         token={resetToken}
-        onDone={(u) => { setResetToken(null); setUser(u); }}
-        onCancel={() => setResetToken(null)}
+        onDone={(u) => { setResetToken(null); signedIn(u); }}
+        onCancel={() => { setResetToken(null); setAuthMode('signin'); }}
       />
     );
   }
+  if (!user && !authMode) return <Landing onStart={openAuthMode} />;
   if (!user) {
-    return <AuthPage googleClientId={googleClientId} joining={Boolean(joinCode)} onSignedIn={setUser} />;
+    return (
+      <AuthPage
+        key={authMode}
+        initialMode={authMode}
+        googleClientId={googleClientId}
+        joining={Boolean(joinCode)}
+        onSignedIn={signedIn}
+        onHome={() => openAuthMode(null)}
+      />
+    );
   }
   return (
     <SignedInApp
