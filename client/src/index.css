@@ -220,6 +220,10 @@ input:focus, select:focus, textarea:focus, button:focus-visible { outline: 2px s
 .label { font-size: 0.85rem; font-weight: 600; }
 .row { display: flex; flex-wrap: wrap; gap: 1rem; }
 .row .field { min-width: 140px; }
+.captains-field { border: 0; margin: 0; padding: 0; }
+.captains-field legend { padding: 0; margin-bottom: 0.3rem; }
+.captains-field select { flex: 1; min-width: 10rem; }
+.captain-mark { margin-right: 0.05em; }
 textarea { resize: vertical; }
 .form-error { color: var(--no); margin: 0; }
 .form-actions { display: flex; justify-content: flex-end; gap: 0.5rem; }

@@ -16,6 +16,8 @@ Repo: github.com/PhilMayer/funklist.
   created and editable by admins (Members tab). New bands start from `DEFAULT_INSTRUMENTS` in `server/db.js`
   (a brass lineup). `quorumFor(attendees, requirements)` in `server/quorum.js` matches by instrument id.
   Instrument names are shared across bands in the `instruments` table.
+- Gigs (not rehearsals) can have up to two captains (`event_captains`, in the order chosen). The client marks
+  them with 🧑‍✈️ before their name via `CaptainName.jsx` / `captains.js`; event emails list them too.
 
 ## Commands
 - `npm test` (root) runs the server tests: `node --test` in `server/test/`. No extra dependencies.

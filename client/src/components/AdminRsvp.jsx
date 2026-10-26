@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { captainLabel } from '../captains';
 
 const OPTIONS = [
   { value: 'yes', label: 'Yes' },
@@ -9,7 +10,7 @@ const LABELS = { yes: 'Yes', iffy: 'Iffy', no: 'No' };
 
 // Admin-only: answer for a bandmate (e.g. someone who texted instead, or a sub without an account).
 // onRsvp(memberId, status, iffyReason) saves; responses come from the event's attendance.
-export default function AdminRsvp({ members, me, responses, saving, onRsvp }) {
+export default function AdminRsvp({ members, me, responses, captainIds, saving, onRsvp }) {
   const others = members.filter((m) => m.id !== me.id);
   const [memberId, setMemberId] = useState('');
   const [reason, setReason] = useState('');
@@ -30,7 +31,7 @@ export default function AdminRsvp({ members, me, responses, saving, onRsvp }) {
             <option value="">Choose a bandmate…</option>
             {others.map((m) => (
               <option key={m.id} value={m.id}>
-                {m.name}{m.instrument ? ` (${m.instrument})` : ''}
+                {captainLabel(m.name, captainIds.has(m.id))}{m.instrument ? ` (${m.instrument})` : ''}
                 {responses[m.id] ? ` · ${LABELS[responses[m.id].status]}` : ' · no response'}
               </option>
             ))}

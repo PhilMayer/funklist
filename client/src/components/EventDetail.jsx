@@ -5,6 +5,7 @@ import IffyReasonInput from './IffyReasonInput';
 import ReasonTooltip from './ReasonTooltip';
 import AddToCalendar from './AddToCalendar';
 import AdminRsvp from './AdminRsvp';
+import CaptainName from './CaptainName';
 
 const RSVP_OPTIONS = [
   { value: 'yes', label: 'Yes' },
@@ -41,6 +42,7 @@ export default function EventDetail({ eventId, me, members = [], instruments, on
     .filter((i) => i.id !== me?.instrument_id)
     .sort((a, b) => (alsoPlay.has(b.id) ? 1 : 0) - (alsoPlay.has(a.id) ? 1 : 0));
   const songs = (event.set_list || '').split('\n').map((s) => s.trim()).filter(Boolean);
+  const captainIds = new Set(event.captains.map((c) => c.id));
 
   async function rsvp(status, instrument = playing) {
     setSaving(true);
@@ -140,6 +142,16 @@ export default function EventDetail({ eventId, me, members = [], instruments, on
         <div><dt>Venue</dt><dd>{event.venue || '—'}</dd></div>
         <div><dt>Call time</dt><dd>{formatTime(event.call_time) || '—'}</dd></div>
         <div><dt>Hit time</dt><dd>{formatTime(event.hit_time) || '—'}</dd></div>
+        {event.type === 'gig' && (
+          <div>
+            <dt>{event.captains.length === 1 ? 'Captain' : 'Captains'}</dt>
+            <dd>
+              {event.captains.length === 0 ? '—' : event.captains.map((c, i) => (
+                <span key={c.id}>{i > 0 && ', '}<CaptainName name={c.name} captain /></span>
+              ))}
+            </dd>
+          </div>
+        )}
       </dl>
 
       {event.status !== 'cancelled' && (
@@ -188,7 +200,7 @@ export default function EventDetail({ eventId, me, members = [], instruments, on
       )}
 
       {me?.is_admin && event.status !== 'cancelled' && (
-        <AdminRsvp members={members} me={me} responses={attendance.responses} saving={saving} onRsvp={rsvpFor} />
+        <AdminRsvp members={members} me={me} responses={attendance.responses} captainIds={captainIds} saving={saving} onRsvp={rsvpFor} />
       )}
 
       <div className="grid">
@@ -204,7 +216,7 @@ export default function EventDetail({ eventId, me, members = [], instruments, on
                   <ul>
                     {g.members.map((m) => (
                       <li key={m.id} className={`${me?.id === m.id ? 'me' : ''} ${m.secondary ? 'secondary' : ''}`}>
-                        {m.secondary ? `(${m.name})` : m.name}
+                        {m.secondary && '('}<CaptainName name={m.name} captain={captainIds.has(m.id)} />{m.secondary && ')'}
                         {m.secondary && <span className="sr-only">, also plays</span>}
                         {me?.id === m.id && !m.secondary && <span className="you"> (you)</span>}
                         {m.primary_instrument && (
@@ -220,9 +232,9 @@ export default function EventDetail({ eventId, me, members = [], instruments, on
             </div>
           )}
 
-          <ResponseList title="Iffy" tone="iffy" people={attendance.iffy} />
-          <ResponseList title="Can't make it" tone="no" people={attendance.no} />
-          <ResponseList title="No response" tone="none" people={attendance.no_response} />
+          <ResponseList title="Iffy" tone="iffy" people={attendance.iffy} captainIds={captainIds} />
+          <ResponseList title="Can't make it" tone="no" people={attendance.no} captainIds={captainIds} />
+          <ResponseList title="No response" tone="none" people={attendance.no_response} captainIds={captainIds} />
         </div>
 
         <div className="card">
@@ -281,7 +293,7 @@ function StatusBar({ event, canChange, saving, onChange }) {
   );
 }
 
-function ResponseList({ title, tone, people }) {
+function ResponseList({ title, tone, people, captainIds }) {
   if (people.length === 0) return null;
   return (
     <div className="response-list">
@@ -289,7 +301,9 @@ function ResponseList({ title, tone, people }) {
       <p>
         {people.map((p, i) => (
           <span key={p.id}>
-            {p.iffy_reason ? <ReasonTooltip reason={p.iffy_reason}>{p.name}</ReasonTooltip> : p.name}
+            {p.iffy_reason
+              ? <ReasonTooltip reason={p.iffy_reason}><CaptainName name={p.name} captain={captainIds.has(p.id)} /></ReasonTooltip>
+              : <CaptainName name={p.name} captain={captainIds.has(p.id)} />}
             {p.iffy_reason && <span className="sr-only">, reason: {p.iffy_reason}</span>}
             {p.instrument && <span className="muted"> ({p.instrument})</span>}
             {i < people.length - 1 && ', '}
