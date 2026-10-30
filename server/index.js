@@ -124,7 +124,7 @@ function requireMember(req, bandId) {
 }
 
 function requireEventMember(req, eventId) {
-  const event = findOr404('SELECT id, band_id, status FROM events WHERE id = ?', eventId, 'Event');
+  const event = findOr404('SELECT id, band_id, status, type, created_by FROM events WHERE id = ?', eventId, 'Event');
   try {
     return { event, member: requireMember(req, event.band_id) };
   } catch {
@@ -794,14 +794,20 @@ app.delete('/api/events/:eventId', (req, res) => {
 
 // ---------- RSVP ----------
 
-// Members RSVP for themselves (from the session); admins may pass member_id to answer for a bandmate.
+// Band admins can answer for any bandmate on any event; a gig's captains and its creator can on that gig.
+const canRsvpForOthers = (event, member) => Boolean(member.is_admin)
+  || (event.type === 'gig' && (event.created_by === member.id || captainsOf(event.id).some((c) => c.id === member.id)));
+
+// Members RSVP for themselves (from the session); those allowed above may pass member_id to answer for a
+// bandmate.
 app.put('/api/events/:eventId/rsvp', (req, res) => {
   const { event, member: me } = requireEventMember(req, req.params.eventId);
   if (event.status === 'cancelled') throw new HttpError(409, 'This event was cancelled, so it no longer takes RSVPs');
-  // Admins may answer for any member of the band (member_id); everyone else answers for themselves.
   let member = me;
   if (req.body.member_id != null && Number(req.body.member_id) !== me.id) {
-    if (!me.is_admin) throw new HttpError(403, 'Only band admins can RSVP for other members');
+    if (!canRsvpForOthers(event, me)) {
+      throw new HttpError(403, "Only band admins, the gig's captains and whoever created it can RSVP for other members");
+    }
     member = db.prepare('SELECT * FROM band_members WHERE id = ? AND band_id = ?').get(Number(req.body.member_id), event.band_id);
     if (!member) throw new HttpError(404, 'Member not found');
   }

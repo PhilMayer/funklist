@@ -43,6 +43,14 @@ export default function EventDetail({ eventId, me, members = [], instruments, on
     .sort((a, b) => (alsoPlay.has(b.id) ? 1 : 0) - (alsoPlay.has(a.id) ? 1 : 0));
   const songs = (event.set_list || '').split('\n').map((s) => s.trim()).filter(Boolean);
   const captainIds = new Set(event.captains.map((c) => c.id));
+  // Who may RSVP for bandmates (matches the server): band admins on any event; a gig's captains and its
+  // creator on that gig. The tag says which.
+  const rsvpForRole = !me ? null
+    : me.is_admin ? 'Admin'
+    : event.type !== 'gig' ? null
+    : captainIds.has(me.id) ? 'Captain'
+    : event.created_by === me.id ? 'Gig creator'
+    : null;
 
   async function rsvp(status, instrument = playing) {
     setSaving(true);
@@ -56,10 +64,12 @@ export default function EventDetail({ eventId, me, members = [], instruments, on
     }
   }
 
-  async function rsvpFor(memberId, status, iffyReason) {
+  // instrument: '' = their usual instrument, undefined = keep the saved choice.
+  async function rsvpFor(memberId, status, iffyReason, instrument) {
     setSaving(true);
     try {
-      setEvent(await api.rsvp(event.id, status, undefined, iffyReason, memberId));
+      const instrumentId = instrument === undefined ? undefined : instrument ? Number(instrument) : null;
+      setEvent(await api.rsvp(event.id, status, instrumentId, iffyReason, memberId));
     } catch (e) {
       onError(e.message);
     } finally {
@@ -199,8 +209,8 @@ export default function EventDetail({ eventId, me, members = [], instruments, on
       </div>
       )}
 
-      {me?.is_admin && event.status !== 'cancelled' && (
-        <AdminRsvp members={members} me={me} responses={attendance.responses} captainIds={captainIds} saving={saving} onRsvp={rsvpFor} />
+      {rsvpForRole && event.status !== 'cancelled' && (
+        <AdminRsvp role={rsvpForRole} members={members} me={me} instruments={instruments} responses={attendance.responses} captainIds={captainIds} saving={saving} onRsvp={rsvpFor} />
       )}
 
       <div className="grid">

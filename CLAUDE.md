@@ -18,6 +18,8 @@ Repo: github.com/PhilMayer/funklist.
   Instrument names are shared across bands in the `instruments` table.
 - Gigs (not rehearsals) can have up to two captains (`event_captains`, in the order chosen). The client marks
   them with 🧑‍✈️ before their name via `CaptainName.jsx` / `captains.js`; event emails list them too.
+- Band admins can RSVP (and pick the instrument) for any bandmate; on a gig, so can its captains and its
+  creator (`canRsvpForOthers` in `server/index.js`, mirrored in `EventDetail.jsx`).
 
 ## Commands
 - `npm test` (root) runs the server tests: `node --test` in `server/test/`. No extra dependencies.
