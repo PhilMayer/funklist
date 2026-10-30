@@ -87,6 +87,21 @@ test('admins can RSVP for others and manage admins; members cannot', async () =>
   assert.equal((await player.put(`/api/events/${ev.id}/rsvp`, { member_id: subId, status: 'yes' })).status, 200);
 });
 
+test("a gig's captains and creator can RSVP for others on that gig only", async () => {
+  const { boss, player, band, subId, playerId } = await setup('c2');
+  const create = (who, type, extra = {}) => who.post(`/api/bands/${band.id}/events`,
+    { type, title: type, event_date: tomorrow(), notify: false, ...extra }).then((r) => r.data);
+  const forSub = (who, ev) => who.put(`/api/events/${ev.id}/rsvp`, { member_id: subId, status: 'yes' }).then((r) => r.status);
+
+  assert.equal(await forSub(player, await create(player, 'gig')), 200, 'gig creator');
+  assert.equal(await forSub(player, await create(player, 'rehearsal')), 403, 'rehearsal creator');
+  assert.equal(await forSub(player, await create(boss, 'gig')), 403, 'someone else\'s gig');
+  const captained = await create(boss, 'gig', { captain_ids: [playerId] });
+  assert.equal(await forSub(player, captained), 200, 'captain');
+  const res = await player.put(`/api/events/${captained.id}/rsvp`, { member_id: subId, status: 'iffy', instrument_id: null });
+  assert.equal(res.data.attendance.responses[subId].status, 'iffy');
+});
+
 test('Upcoming vs Past follows the band time zone', async () => {
   const { boss, band } = await setup('t');
   const today = todayIn('America/New_York');

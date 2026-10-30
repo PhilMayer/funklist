@@ -8,11 +8,12 @@ const OPTIONS = [
 ];
 const LABELS = { yes: 'Yes', iffy: 'Iffy', no: 'No' };
 
-// Admin-only: answer for a bandmate (e.g. someone who texted instead, or a sub without an account).
+// Answer for a bandmate (e.g. someone who texted instead, or a sub without an account). Shown to band
+// admins, and on a gig to its captains and creator; `role` labels which.
 // onRsvp(memberId, status, iffyReason, instrumentId) saves; responses come from the event's attendance.
 // For bandmates who also play other instruments, a Playing menu picks which one they play at this event
 // ('' = their usual instrument; undefined keeps the saved choice).
-export default function AdminRsvp({ members, me, instruments = [], responses, captainIds, saving, onRsvp }) {
+export default function AdminRsvp({ role = 'Admin', members, me, instruments = [], responses, captainIds, saving, onRsvp }) {
   const others = members.filter((m) => m.id !== me.id);
   const [memberId, setMemberId] = useState('');
   const [reason, setReason] = useState('');
@@ -40,7 +41,7 @@ export default function AdminRsvp({ members, me, instruments = [], responses, ca
     <div className="admin-rsvp">
       <div className="admin-rsvp-row">
         <label>
-          <span className="admin-tag">Admin</span> RSVP for
+          <span className="admin-tag">{role}</span> RSVP for
           <select value={memberId} onChange={(e) => choose(e.target.value)}>
             <option value="">Choose a bandmate…</option>
             {others.map((m) => (
