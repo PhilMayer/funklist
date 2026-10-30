@@ -10,6 +10,12 @@ const scrypt = promisify(crypto.scrypt);
 
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || null;
 const googleClient = GOOGLE_CLIENT_ID ? new OAuth2Client(GOOGLE_CLIENT_ID) : null;
+// Checks a Google ID token's signature and audience and returns its claims. Tests replace `verify`.
+const google = {
+  verify: googleClient
+    ? async (idToken) => (await googleClient.verifyIdToken({ idToken, audience: GOOGLE_CLIENT_ID })).getPayload()
+    : null,
+};
 
 const SESSION_COOKIE = 'funklist_session';
 const SESSION_DAYS = 30;
@@ -155,6 +161,9 @@ router.post('/register', rateLimit, async (req, res) => {
   if (db.prepare('SELECT 1 FROM users WHERE username = ?').get(username)) {
     throw new HttpError(409, 'That username is taken');
   }
+  if (email && db.prepare('SELECT 1 FROM users WHERE email = ? COLLATE NOCASE').get(email)) {
+    throw new HttpError(409, 'There’s already an account with this email. Sign in instead (with Google or your password), or use “Forgot password?”.');
+  }
   const passwordHash = await hashPassword(password);
   const { lastInsertRowid } = db
     .prepare('INSERT INTO users (username, password_hash, email, display_name) VALUES (?, ?, ?, ?)')
@@ -173,26 +182,50 @@ router.post('/login', rateLimit, async (req, res) => {
   res.json({ user: getUser(user.id) });
 });
 
+const LINK_NEEDS_RESET =
+  'There’s already a Funklist account with this email. To use Google with it, confirm the email first: ' +
+  'choose “Forgot password?”, open the emailed link, and set a password. Then “Continue with Google” signs in to that account.';
+
 // The browser gets an ID token from Google Identity Services; we verify its signature and audience.
+// One email, one account: a Google sign-in whose email matches an account that signed up with a username
+// signs in to (and links Google to) that account. Its email must be proven first, though; otherwise
+// anyone could sign up with someone else's address and share the account they later sign in to.
 router.post('/google', rateLimit, async (req, res) => {
-  if (!googleClient) throw new HttpError(400, 'Google sign-in is not configured on this server');
+  if (!google.verify) throw new HttpError(400, 'Google sign-in is not configured on this server');
   let payload;
   try {
-    const ticket = await googleClient.verifyIdToken({ idToken: req.body.credential, audience: GOOGLE_CLIENT_ID });
-    payload = ticket.getPayload();
+    payload = await google.verify(req.body.credential);
   } catch {
     throw new HttpError(401, 'Google sign-in failed. Please try again.');
   }
-  const existing = db.prepare('SELECT id FROM users WHERE google_sub = ?').get(payload.sub);
+  const email = payload.email_verified ? payload.email : null;
+  const existing = db.prepare('SELECT id, password_hash FROM users WHERE google_sub = ?').get(payload.sub);
+  // A Google-only account that isn't in any band can be folded into a matching account, which also
+  // repairs duplicates made before Google sign-ins were linked by email.
+  const replaceable = !existing ||
+    (!existing.password_hash && !db.prepare('SELECT 1 FROM band_members WHERE user_id = ?').get(existing.id));
+  const matches = email && replaceable
+    ? db.prepare(`
+        SELECT id, email_verified FROM users WHERE email = ? COLLATE NOCASE AND google_sub IS NULL
+        ORDER BY email_verified DESC, id
+      `).all(email)
+    : [];
   let userId = existing?.id;
-  if (!userId) {
+  if (matches.length && !matches[0].email_verified) throw new HttpError(409, LINK_NEEDS_RESET);
+  if (matches.length) {
+    userId = matches[0].id;
+    db.transaction(() => {
+      if (existing) db.prepare('DELETE FROM users WHERE id = ?').run(existing.id);
+      db.prepare('UPDATE users SET google_sub = ? WHERE id = ?').run(payload.sub, userId);
+    })();
+  } else if (!userId) {
     userId = db
-      .prepare('INSERT INTO users (google_sub, email, display_name) VALUES (?, ?, ?)')
-      .run(payload.sub, payload.email_verified ? payload.email : null, payload.name || payload.email || 'Google user')
+      .prepare('INSERT INTO users (google_sub, email, email_verified, display_name) VALUES (?, ?, ?, ?)')
+      .run(payload.sub, email, email ? 1 : 0, payload.name || payload.email || 'Google user')
       .lastInsertRowid;
   }
   startSession(res, userId);
-  res.status(existing ? 200 : 201).json({ user: getUser(userId) });
+  res.status(existing || matches.length ? 200 : 201).json({ user: getUser(userId) });
 });
 
 // ---------- Password reset ----------
@@ -235,7 +268,10 @@ router.post('/forgot', rateLimit, (req, res) => {
   const users = identifier.includes('@')
     ? db.prepare('SELECT * FROM users WHERE email = ? COLLATE NOCASE').all(identifier)
     : db.prepare('SELECT * FROM users WHERE username = ?').all(identifier);
-  for (const user of users.filter((u) => u.email)) {
+  const withEmail = users.filter((u) => u.email);
+  // Older duplicates can share an email: then the password account's link is all that's needed.
+  const anyPassword = withEmail.some((u) => u.password_hash);
+  for (const user of withEmail) {
     let sending;
     if (user.password_hash) {
       const token = crypto.randomBytes(32).toString('base64url');
@@ -246,8 +282,10 @@ router.post('/forgot', rateLimit, (req, res) => {
           .run(sha256(token), user.id, `+${RESET_MINUTES} minutes`);
       })();
       sending = sendResetEmail(req, user, token);
-    } else {
+    } else if (!anyPassword) {
       sending = sendGoogleOnlyEmail(user);
+    } else {
+      continue;
     }
     // Not awaited, so the response time doesn't depend on whether an account matched.
     sending.catch((err) => console.error(`Password reset email for user ${user.id} failed: ${err.message}`));
@@ -256,6 +294,7 @@ router.post('/forgot', rateLimit, (req, res) => {
 });
 
 // Sets a new password from an emailed link, signs the account out everywhere else, and signs in here.
+// Opening the link proves the account's email, so a Google sign-in with that email can then link to it.
 router.post('/reset', rateLimit, async (req, res) => {
   const token = typeof req.body.token === 'string' ? req.body.token : '';
   const reset = db.prepare(`
@@ -266,7 +305,7 @@ router.post('/reset', rateLimit, async (req, res) => {
   checkNewPassword(req.body.password);
   const passwordHash = await hashPassword(req.body.password);
   db.transaction(() => {
-    db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(passwordHash, reset.user_id);
+    db.prepare('UPDATE users SET password_hash = ?, email_verified = 1 WHERE id = ?').run(passwordHash, reset.user_id);
     db.prepare("UPDATE password_resets SET used_at = datetime('now') WHERE token_hash = ?").run(reset.token_hash);
     db.prepare('DELETE FROM password_resets WHERE user_id = ? AND used_at IS NULL').run(reset.user_id);
     db.prepare('DELETE FROM sessions WHERE user_id = ?').run(reset.user_id);
@@ -295,12 +334,18 @@ router.post('/password', requireUser, async (req, res) => {
 });
 
 // Account email (used for password resets). Also fills band member profiles that have no email,
-// so event notifications reach this person too.
+// so event notifications reach this person too. A new email isn't proven yet, and reset links sent
+// to the old one stop working.
 router.put('/account', requireUser, (req, res) => {
   const email = clean(req.body.email);
   if (email && !EMAIL_RE.test(email)) throw new HttpError(400, `"${email}" doesn't look like an email address`);
+  const changed = (email || '').toLowerCase() !== (req.user.email || '').toLowerCase();
   db.transaction(() => {
     db.prepare('UPDATE users SET email = ? WHERE id = ?').run(email, req.user.id);
+    if (changed) {
+      db.prepare('UPDATE users SET email_verified = 0 WHERE id = ?').run(req.user.id);
+      db.prepare('DELETE FROM password_resets WHERE user_id = ? AND used_at IS NULL').run(req.user.id);
+    }
     if (email) db.prepare('UPDATE band_members SET email = ? WHERE user_id = ? AND email IS NULL').run(email, req.user.id);
   })();
   res.json({ user: getUser(req.user.id) });
@@ -311,4 +356,4 @@ router.post('/logout', (req, res) => {
   res.status(204).end();
 });
 
-module.exports = { router, loadUser, requireUser };
+module.exports = { router, loadUser, requireUser, google };
