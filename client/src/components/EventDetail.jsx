@@ -56,10 +56,12 @@ export default function EventDetail({ eventId, me, members = [], instruments, on
     }
   }
 
-  async function rsvpFor(memberId, status, iffyReason) {
+  // instrument: '' = their usual instrument, undefined = keep the saved choice.
+  async function rsvpFor(memberId, status, iffyReason, instrument) {
     setSaving(true);
     try {
-      setEvent(await api.rsvp(event.id, status, undefined, iffyReason, memberId));
+      const instrumentId = instrument === undefined ? undefined : instrument ? Number(instrument) : null;
+      setEvent(await api.rsvp(event.id, status, instrumentId, iffyReason, memberId));
     } catch (e) {
       onError(e.message);
     } finally {
@@ -200,7 +202,7 @@ export default function EventDetail({ eventId, me, members = [], instruments, on
       )}
 
       {me?.is_admin && event.status !== 'cancelled' && (
-        <AdminRsvp members={members} me={me} responses={attendance.responses} captainIds={captainIds} saving={saving} onRsvp={rsvpFor} />
+        <AdminRsvp members={members} me={me} instruments={instruments} responses={attendance.responses} captainIds={captainIds} saving={saving} onRsvp={rsvpFor} />
       )}
 
       <div className="grid">
