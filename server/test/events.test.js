@@ -44,7 +44,10 @@ test('RSVPs: own answer, Iffy reasons, and cancelled events', async () => {
   const ev = (await player.post(`/api/bands/${band.id}/events`, { type: 'rehearsal', title: 'Run', event_date: tomorrow(), notify: false })).data;
   const me = player.user && (await player.get(`/api/bands/${band.id}/members`)).data.find((m) => m.is_me).id;
 
+  const myStatus = async () => (await player.get(`/api/bands/${band.id}/events/overview`)).data.events.find((e) => e.id === ev.id).my_status;
+  assert.equal(await myStatus(), null, 'overview: no answer yet');
   let r = await player.put(`/api/events/${ev.id}/rsvp`, { status: 'iffy', iffy_reason: '  Might work late ' });
+  assert.equal(await myStatus(), 'iffy', 'overview shows my own answer');
   assert.deepEqual(r.data.attendance.responses[me], { status: 'iffy', instrument_id: null, iffy_reason: 'Might work late' });
   r = await player.put(`/api/events/${ev.id}/rsvp`, { status: 'yes' });
   assert.equal(r.data.attendance.responses[me].iffy_reason, null, 'answering Yes clears the reason');

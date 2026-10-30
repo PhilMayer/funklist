@@ -480,6 +480,14 @@ button.link.inline { margin: 0; font-size: inherit; text-decoration: underline; 
 .status-pill.pending { color: var(--iffy); }
 .status-pill.confirmed { color: var(--yes); }
 .status-pill.cancelled { color: var(--no); }
+.my-rsvp { font-size: 0.8rem; font-weight: 700; white-space: nowrap; }
+.my-rsvp.yes { color: var(--yes); }
+.my-rsvp.iffy { color: var(--iffy); font-style: italic; }
+.my-rsvp.no { color: var(--no); }
+.my-rsvp.pending { color: var(--muted); font-weight: 400; white-space: normal; }
+@media (max-width: 700px) {
+  .overview-table th, .overview-table td { padding-left: 0.3rem; padding-right: 0.3rem; }
+}
 
 /* Admins */
 .pill.admin { background: var(--gig-bg); color: var(--gig); }

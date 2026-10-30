@@ -493,15 +493,18 @@ const captainsOf = (eventId) => db.prepare(`
 
 // Compact overview of every event in the band, cancelled ones included, oldest first. `today` is
 // the band's local date so the app can tell past months from upcoming ones.
+// my_status is the signed-in member's own response (null = hasn't responded).
 app.get('/api/bands/:bandId/events/overview', (req, res) => {
   const me = requireMember(req, req.params.bandId);
   const { timezone } = db.prepare('SELECT timezone FROM bands WHERE id = ?').get(me.band_id);
   const events = db.prepare(`
-    SELECT e.id, e.type, e.title, e.event_date, e.status, d.call_time
-    FROM events e LEFT JOIN event_details d ON d.event_id = e.id
-    WHERE e.band_id = ?
+    SELECT e.id, e.type, e.title, e.event_date, e.status, d.call_time, a.status AS my_status
+    FROM events e
+    LEFT JOIN event_details d ON d.event_id = e.id
+    LEFT JOIN event_attendance a ON a.event_id = e.id AND a.member_id = @memberId
+    WHERE e.band_id = @bandId
     ORDER BY e.event_date, d.call_time, e.id
-  `).all(me.band_id);
+  `).all({ bandId: me.band_id, memberId: me.id });
   res.json({ today: todayIn(timezone || DEFAULT_TIMEZONE), events });
 });
 

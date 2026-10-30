@@ -7,6 +7,8 @@ const STATUS = {
   cancelled: { label: 'Cancelled', className: 'cancelled' },
 };
 
+const RSVP_LABELS = { yes: 'Yes', iffy: 'Iffy', no: 'No' };
+
 const monthLabel = (ym) => {
   const [y, m] = ym.split('-').map(Number);
   return new Date(y, m - 1, 1).toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
@@ -48,11 +50,11 @@ export default function EventsOverview({ bandId, when, refreshKey, onOpen, onErr
         <div className="table-wrap">
           <table className="overview-table">
             <thead>
-              <tr><th>Date</th><th>Event</th><th>Status</th></tr>
+              <tr><th>Date</th><th>Event</th><th>Status</th><th>You</th></tr>
             </thead>
             {months.map((m) => (
               <tbody key={m.ym}>
-                <tr className="month-row"><th colSpan={3} scope="colgroup">{monthLabel(m.ym)}</th></tr>
+                <tr className="month-row"><th colSpan={4} scope="colgroup">{monthLabel(m.ym)}</th></tr>
                 {m.events.map((e) => (
                   <tr
                     key={e.id}
@@ -66,6 +68,7 @@ export default function EventsOverview({ bandId, when, refreshKey, onOpen, onErr
                       </button>
                     </td>
                     <td><span className={`status-pill ${STATUS[e.status].className}`}>{STATUS[e.status].label}</span></td>
+                    <td><MyRsvp status={e.my_status} cancelled={e.status === 'cancelled'} /></td>
                   </tr>
                 ))}
               </tbody>
@@ -75,4 +78,10 @@ export default function EventsOverview({ bandId, when, refreshKey, onOpen, onErr
       )}
     </section>
   );
+}
+
+// The signed-in member's own answer. No answer on a cancelled event doesn't need one, so it shows a dash.
+function MyRsvp({ status, cancelled }) {
+  if (status) return <span className={`my-rsvp ${status}`}>{RSVP_LABELS[status]}</span>;
+  return <span className="my-rsvp pending">{cancelled ? '–' : 'No response'}</span>;
 }
