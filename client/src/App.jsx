@@ -252,6 +252,10 @@ function SignedInApp({ user, joinCode, onDoneJoining, onSignOut, onUserUpdated }
             <p className="muted">
               Create a band below, or open an invite link from a bandmate to join theirs.
             </p>
+            <p className="muted small-text">
+              Already in a band? You may have signed up another way (Google or a username): sign out and
+              sign in that way.
+            </p>
           </div>
         )}
         <CreateBand

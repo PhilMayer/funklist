@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS users (
   password_hash  TEXT,                        -- scrypt; NULL for Google-only accounts
   google_sub     TEXT UNIQUE,                 -- Google's stable account id
   email          TEXT,
+  email_verified INTEGER NOT NULL DEFAULT 0,  -- 1 once the email is proven (from Google, or a used reset link)
   display_name   TEXT NOT NULL,
   calendar_token TEXT,                        -- secret in the calendar feed URL; unique index in db.js
   created_at     TEXT NOT NULL DEFAULT (datetime('now')),

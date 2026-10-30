@@ -41,6 +41,11 @@ if (!hasColumn('band_members', 'is_admin')) {
 if (!hasColumn('users', 'calendar_token')) {
   db.exec('ALTER TABLE users ADD COLUMN calendar_token TEXT');
 }
+if (!hasColumn('users', 'email_verified')) {
+  db.exec('ALTER TABLE users ADD COLUMN email_verified INTEGER NOT NULL DEFAULT 0');
+  // Google accounts only ever stored the email Google had verified.
+  db.exec('UPDATE users SET email_verified = 1 WHERE google_sub IS NOT NULL AND email IS NOT NULL');
+}
 if (!hasColumn('bands', 'timezone')) {
   db.exec('ALTER TABLE bands ADD COLUMN timezone TEXT');
 }
